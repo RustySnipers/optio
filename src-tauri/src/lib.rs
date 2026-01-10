@@ -7,6 +7,7 @@ pub mod commands;
 pub mod factory;
 pub mod grc;
 pub mod infrastructure;
+pub mod network;
 pub mod error;
 pub mod db;
 
@@ -30,6 +31,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .manage(commands::network::NetworkState::default())
         .setup(|app| {
             // Initialize the database on startup
             let app_handle = app.handle().clone();
@@ -90,6 +92,26 @@ pub fn run() {
             commands::infrastructure::calculate_single_resource_cost,
             commands::infrastructure::generate_finops_report,
             commands::infrastructure::compare_cloud_providers,
+            // Network Intelligence commands
+            commands::network::check_nmap,
+            commands::network::get_scan_type_list,
+            commands::network::get_common_port_list,
+            commands::network::validate_scan_target,
+            commands::network::create_scan,
+            commands::network::preview_scan_command,
+            commands::network::list_scans,
+            commands::network::get_scan,
+            commands::network::delete_scan,
+            commands::network::list_assets,
+            commands::network::get_demo_assets,
+            commands::network::get_asset,
+            commands::network::update_asset,
+            commands::network::delete_asset,
+            commands::network::get_network_stats,
+            commands::network::create_asset_group,
+            commands::network::list_asset_groups,
+            commands::network::add_asset_to_group,
+            commands::network::remove_asset_from_group,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

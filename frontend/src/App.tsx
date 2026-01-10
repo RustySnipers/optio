@@ -4,6 +4,7 @@ import { Dashboard } from "@/components/Dashboard";
 import { ClientOnboarding } from "@/components/ClientOnboarding";
 import { GRCCommandCenter } from "@/components/GRCCommandCenter";
 import { InfrastructureMigration } from "@/components/InfrastructureMigration";
+import { NetworkIntelligence } from "@/components/NetworkIntelligence";
 import { Header } from "@/components/Header";
 import { getSystemInfo } from "@/lib/commands";
 import type { ViewMode, SystemInfo } from "@/types";
@@ -37,12 +38,7 @@ function App() {
       case "infrastructure":
         return <InfrastructureMigration />;
       case "network":
-        return (
-          <div className="p-8">
-            <h2 className="text-2xl font-bold text-white mb-4">Network Intelligence</h2>
-            <p className="text-slate-400">Network discovery and analysis module coming in Phase 2.</p>
-          </div>
-        );
+        return <NetworkIntelligence />;
       case "settings":
         return (
           <div className="p-8">
