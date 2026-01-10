@@ -1,0 +1,34 @@
+{
+  "name": "optio",
+  "version": "0.1.0",
+  "description": "Consultant-in-a-Box: Enterprise Architecture & Security Toolkit",
+  "type": "module",
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "install:all": "npm install && cd frontend && npm install",
+    "lint": "cd frontend && npm run lint",
+    "test:rust": "cd src-tauri && cargo test",
+    "check:rust": "cd src-tauri && cargo check"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RustySnipers/optio.git"
+  },
+  "keywords": [
+    "tauri",
+    "security",
+    "enterprise-architecture",
+    "it-consulting",
+    "nist",
+    "compliance"
+  ],
+  "author": "Optio Team",
+  "license": "MIT"
+}
