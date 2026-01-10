@@ -14,7 +14,7 @@ use chrono::{DateTime, Utc};
 
 /// Thread-safe database connection wrapper
 pub struct Database {
-    conn: Mutex<Connection>,
+    pub conn: Mutex<Connection>,
 }
 
 impl Database {
@@ -243,6 +243,9 @@ pub async fn initialize(app_handle: &AppHandle) -> OptioResult<()> {
 
     let db = Database::open(&db_path)?;
     db.init_schema()?;
+
+    // Initialize GRC schema
+    crate::grc::repository::init_grc_schema(&db)?;
 
     // Store database in app state
     app_handle.manage(db);

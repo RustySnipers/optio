@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Sidebar } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
 import { ClientOnboarding } from "@/components/ClientOnboarding";
+import { GRCCommandCenter } from "@/components/GRCCommandCenter";
 import { Header } from "@/components/Header";
 import { getSystemInfo } from "@/lib/commands";
 import type { ViewMode, SystemInfo } from "@/types";
@@ -31,12 +32,7 @@ function App() {
           </div>
         );
       case "grc":
-        return (
-          <div className="p-8">
-            <h2 className="text-2xl font-bold text-white mb-4">GRC Command Center</h2>
-            <p className="text-slate-400">Governance, Risk & Compliance module coming in Phase 2.</p>
-          </div>
-        );
+        return <GRCCommandCenter />;
       case "network":
         return (
           <div className="p-8">

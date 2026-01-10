@@ -125,6 +125,165 @@ export interface LogEntry {
 }
 
 // ============================================================================
+// GRC Types (Governance, Risk, Compliance)
+// ============================================================================
+
+export type ComplianceStatus =
+  | "NOT_ASSESSED"
+  | "COMPLIANT"
+  | "PARTIALLY_COMPLIANT"
+  | "NON_COMPLIANT"
+  | "NOT_APPLICABLE";
+
+export type AssessmentStatus =
+  | "DRAFT"
+  | "IN_PROGRESS"
+  | "UNDER_REVIEW"
+  | "COMPLETED"
+  | "ARCHIVED";
+
+export type EvidenceType =
+  | "DOCUMENT"
+  | "SCREENSHOT"
+  | "CONFIGURATION"
+  | "SCAN_RESULT"
+  | "INTERVIEW"
+  | "LOG_FILE"
+  | "OTHER";
+
+export interface FrameworkInfo {
+  id: string;
+  name: string;
+  description: string;
+  controlCount: number;
+  categories: CategoryInfo[];
+}
+
+export interface CategoryInfo {
+  code: string;
+  name: string;
+  description: string;
+  color: string;
+}
+
+export interface Control {
+  id: string;
+  framework: string;
+  code: string;
+  category: string;
+  subcategory: string | null;
+  title: string;
+  description: string;
+  guidance: string | null;
+  crossReferences: string[];
+  priority: number;
+}
+
+export interface Assessment {
+  id: string;
+  clientId: string;
+  name: string;
+  description: string | null;
+  framework: string;
+  scope: string | null;
+  startedAt: string;
+  completedAt: string | null;
+  leadAssessor: string;
+  status: AssessmentStatus;
+}
+
+export interface CreateAssessmentRequest {
+  clientId: string;
+  name: string;
+  description?: string;
+  framework: string;
+  scope?: string;
+  leadAssessor: string;
+}
+
+export interface ControlAssessment {
+  id: string;
+  assessmentId: string;
+  controlId: string;
+  status: ComplianceStatus;
+  notes: string | null;
+  gapDescription: string | null;
+  remediation: string | null;
+  remediationTarget: string | null;
+  riskRating: number | null;
+  evidenceIds: string[];
+  assessedAt: string;
+  assessedBy: string;
+}
+
+export interface UpdateControlAssessmentRequest {
+  assessmentId: string;
+  controlId: string;
+  status: ComplianceStatus;
+  notes?: string;
+  gapDescription?: string;
+  remediation?: string;
+  remediationTarget?: string;
+  riskRating?: number;
+  assessedBy: string;
+}
+
+export interface Evidence {
+  id: string;
+  assessmentId: string;
+  controlIds: string[];
+  evidenceType: EvidenceType;
+  title: string;
+  description: string | null;
+  filePath: string | null;
+  url: string | null;
+  fileHash: string | null;
+  collectedAt: string;
+  collectedBy: string;
+  notes: string | null;
+}
+
+export interface CreateEvidenceRequest {
+  assessmentId: string;
+  controlIds: string[];
+  evidenceType: EvidenceType;
+  title: string;
+  description?: string;
+  filePath?: string;
+  url?: string;
+  notes?: string;
+  collectedBy: string;
+}
+
+export interface CategoryScore {
+  category: string;
+  displayName: string;
+  color: string;
+  totalControls: number;
+  compliant: number;
+  partiallyCompliant: number;
+  nonCompliant: number;
+  notAssessed: number;
+  notApplicable: number;
+  compliancePercentage: number;
+}
+
+export interface AssessmentSummary {
+  assessmentId: string;
+  framework: string;
+  overallCompliance: number;
+  totalControls: number;
+  compliant: number;
+  partiallyCompliant: number;
+  nonCompliant: number;
+  notAssessed: number;
+  notApplicable: number;
+  categoryScores: CategoryScore[];
+  highRiskGaps: number;
+  evidenceCount: number;
+}
+
+// ============================================================================
 // Error Types
 // ============================================================================
 
