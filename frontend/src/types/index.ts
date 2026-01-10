@@ -109,7 +109,7 @@ export interface SystemInfo {
 // UI State Types
 // ============================================================================
 
-export type ViewMode = 'dashboard' | 'clients' | 'factory' | 'grc' | 'network' | 'settings';
+export type ViewMode = 'dashboard' | 'clients' | 'factory' | 'grc' | 'infrastructure' | 'network' | 'settings';
 
 export interface AppState {
   currentView: ViewMode;
@@ -281,6 +281,275 @@ export interface AssessmentSummary {
   categoryScores: CategoryScore[];
   highRiskGaps: number;
   evidenceCount: number;
+}
+
+// ============================================================================
+// Infrastructure Types (Cloud Migration & K8s Hardening)
+// ============================================================================
+
+export type CloudProvider = "AWS" | "Azure" | "GCP";
+
+export type MigrationStrategy =
+  | "Rehost"
+  | "Replatform"
+  | "Refactor"
+  | "Repurchase"
+  | "Retire"
+  | "Retain";
+
+export type ReadinessCategory =
+  | "BusinessAlignment"
+  | "TechnicalReadiness"
+  | "SecurityCompliance"
+  | "OperationalReadiness"
+  | "FinancialPlanning"
+  | "PeopleProcess"
+  | "DataManagement";
+
+export type ReadinessStatus =
+  | "NotStarted"
+  | "InProgress"
+  | "Completed"
+  | "Blocked"
+  | "NotApplicable";
+
+export type K8sHardeningCategory =
+  | "PodSecurity"
+  | "NetworkPolicies"
+  | "Authentication"
+  | "Authorization"
+  | "Logging"
+  | "ThreatDetection"
+  | "SupplyChain"
+  | "Secrets";
+
+export type Severity = "Critical" | "High" | "Medium" | "Low";
+
+export type K8sCheckStatus = "Pass" | "Fail" | "Warn" | "NotChecked";
+
+export type ResourceType =
+  | "VirtualMachine"
+  | "Container"
+  | "Database"
+  | "Storage"
+  | "Network"
+  | "Kubernetes"
+  | "Serverless"
+  | "LoadBalancer"
+  | "Other";
+
+// Cloud Readiness Types
+export interface CloudReadinessItem {
+  id: string;
+  category: ReadinessCategory;
+  title: string;
+  description: string;
+  guidance: string;
+  priority: number;
+  dependencies: string[];
+  estimatedEffortDays: number;
+}
+
+export interface ReadinessResponse {
+  itemId: string;
+  status: ReadinessStatus;
+  notes: string | null;
+  blockers: string | null;
+}
+
+export interface CloudReadinessAssessment {
+  id: string;
+  clientId: string;
+  clientName: string;
+  targetProvider: CloudProvider;
+  assessmentDate: string;
+  responses: ReadinessResponse[];
+  overallScore: number;
+  categoryScores: Record<string, number>;
+  criticalBlockers: string[];
+  recommendations: string[];
+}
+
+export interface PerformReadinessAssessmentRequest {
+  clientId: string;
+  clientName: string;
+  targetProvider: string;
+  itemStatuses: ReadinessItemStatus[];
+}
+
+export interface ReadinessItemStatus {
+  itemId: string;
+  status: string;
+  notes?: string;
+}
+
+// K8s Hardening Types
+export interface K8sHardeningCheck {
+  id: string;
+  category: K8sHardeningCategory;
+  title: string;
+  description: string;
+  rationale: string;
+  remediation: string;
+  severity: Severity;
+  references: string[];
+  automatable: boolean;
+}
+
+export interface K8sCheckResultData {
+  checkId: string;
+  status: K8sCheckStatus;
+  finding: string | null;
+  affectedResources: string[];
+  remediationApplied: boolean;
+}
+
+export interface K8sHardeningAudit {
+  id: string;
+  clientId: string;
+  clusterName: string;
+  clusterVersion: string;
+  auditDate: string;
+  results: K8sCheckResultData[];
+  overallScore: number;
+  criticalFindings: number;
+  highFindings: number;
+  mediumFindings: number;
+  lowFindings: number;
+  recommendations: string[];
+}
+
+export interface PerformK8sAuditRequest {
+  clientId: string;
+  clusterName: string;
+  clusterVersion: string;
+  checkResults: K8sCheckResult[];
+}
+
+export interface K8sCheckResult {
+  checkId: string;
+  status: string;
+  finding?: string;
+  affectedResources?: string[];
+}
+
+export interface K8sSeverityStats {
+  total: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}
+
+// FinOps Types
+export interface ResourceSpecs {
+  vcpus?: number;
+  memoryGb?: number;
+  storageGb?: number;
+  bandwidthGbps?: number;
+  iops?: number;
+}
+
+export interface ResourceCostEstimate {
+  resourceType: ResourceType;
+  name: string;
+  quantity: number;
+  specs: ResourceSpecs;
+  monthlyCost: number;
+  notes: string | null;
+}
+
+export interface OnPremiseCosts {
+  hardwareMonthly: number;
+  softwareLicensingMonthly: number;
+  datacenterMonthly: number;
+  personnelMonthly: number;
+  maintenanceMonthly: number;
+  powerCoolingMonthly: number;
+  networkMonthly: number;
+}
+
+export interface CostRecommendation {
+  category: string;
+  title: string;
+  description: string;
+  estimatedSavings: number;
+  effort: string;
+  priority: number;
+}
+
+export interface FinOpsAnalysis {
+  id: string;
+  clientId: string;
+  analysisDate: string;
+  targetProvider: CloudProvider;
+  migrationStrategy: MigrationStrategy;
+  currentMonthlyCost: number;
+  projectedMonthlyCost: number;
+  estimatedSavingsPercentage: number;
+  migrationCostEstimate: number;
+  roiMonths: number;
+  resourceBreakdown: ResourceCostEstimate[];
+  recommendations: CostRecommendation[];
+  assumptions: string[];
+}
+
+export interface FinOpsTemplate {
+  name: string;
+  description: string;
+  resourceCount: number;
+}
+
+export interface GenerateFinOpsAnalysisRequest {
+  clientId: string;
+  targetProvider: string;
+  migrationStrategy: string;
+  currentCosts: OnPremCostsInput;
+  resources: ResourceInput[];
+}
+
+export interface OnPremCostsInput {
+  hardwareMonthly: number;
+  softwareLicensingMonthly: number;
+  datacenterMonthly: number;
+  personnelMonthly: number;
+  maintenanceMonthly: number;
+  powerCoolingMonthly: number;
+  networkMonthly: number;
+}
+
+export interface ResourceInput {
+  resourceType: string;
+  name: string;
+  quantity: number;
+  vcpus?: number;
+  memoryGb?: number;
+  storageGb?: number;
+  bandwidthGbps?: number;
+  iops?: number;
+  notes?: string;
+}
+
+export interface CalculateResourceCostRequest {
+  resourceType: string;
+  name: string;
+  quantity: number;
+  vcpus?: number;
+  memoryGb?: number;
+  storageGb?: number;
+  bandwidthGbps?: number;
+  iops?: number;
+  provider: string;
+}
+
+export interface ProviderComparison {
+  provider: string;
+  monthlyCost: number;
+  annualCost: number;
+}
+
+export interface CompareProvidersRequest {
+  resources: ResourceInput[];
 }
 
 // ============================================================================

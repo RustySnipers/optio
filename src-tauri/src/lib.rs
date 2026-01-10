@@ -6,6 +6,7 @@
 pub mod commands;
 pub mod factory;
 pub mod grc;
+pub mod infrastructure;
 pub mod error;
 pub mod db;
 
@@ -77,6 +78,18 @@ pub fn run() {
             commands::grc::get_assessment_evidence,
             commands::grc::delete_evidence,
             commands::grc::get_assessment_summary,
+            // Infrastructure commands
+            commands::infrastructure::get_cloud_readiness_items,
+            commands::infrastructure::get_cloud_readiness_by_category,
+            commands::infrastructure::assess_cloud_readiness,
+            commands::infrastructure::get_k8s_hardening_checklist,
+            commands::infrastructure::get_k8s_hardening_by_category,
+            commands::infrastructure::audit_k8s_hardening,
+            commands::infrastructure::get_k8s_severity_stats,
+            commands::infrastructure::get_finops_templates,
+            commands::infrastructure::calculate_single_resource_cost,
+            commands::infrastructure::generate_finops_report,
+            commands::infrastructure::compare_cloud_providers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

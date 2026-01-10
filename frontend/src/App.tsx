@@ -3,6 +3,7 @@ import { Sidebar } from "@/components/Sidebar";
 import { Dashboard } from "@/components/Dashboard";
 import { ClientOnboarding } from "@/components/ClientOnboarding";
 import { GRCCommandCenter } from "@/components/GRCCommandCenter";
+import { InfrastructureMigration } from "@/components/InfrastructureMigration";
 import { Header } from "@/components/Header";
 import { getSystemInfo } from "@/lib/commands";
 import type { ViewMode, SystemInfo } from "@/types";
@@ -33,6 +34,8 @@ function App() {
         );
       case "grc":
         return <GRCCommandCenter />;
+      case "infrastructure":
+        return <InfrastructureMigration />;
       case "network":
         return (
           <div className="p-8">
