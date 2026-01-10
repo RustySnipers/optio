@@ -5,6 +5,7 @@
 
 pub mod commands;
 pub mod factory;
+pub mod grc;
 pub mod error;
 pub mod db;
 
@@ -60,6 +61,22 @@ pub fn run() {
             // System commands
             commands::system::get_system_info,
             commands::system::get_consultant_ip,
+            // GRC commands
+            commands::grc::list_frameworks,
+            commands::grc::get_framework_controls_cmd,
+            commands::grc::create_assessment,
+            commands::grc::get_assessment,
+            commands::grc::list_client_assessments,
+            commands::grc::list_assessments,
+            commands::grc::update_assessment_status,
+            commands::grc::delete_assessment,
+            commands::grc::update_control_assessment,
+            commands::grc::get_control_assessments,
+            commands::grc::batch_update_controls,
+            commands::grc::create_evidence,
+            commands::grc::get_assessment_evidence,
+            commands::grc::delete_evidence,
+            commands::grc::get_assessment_summary,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
