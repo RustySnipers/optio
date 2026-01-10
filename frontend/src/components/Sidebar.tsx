@@ -5,6 +5,7 @@ import {
   Factory,
   Users,
   Shield,
+  Cloud,
   Network,
   Settings,
   Box,
@@ -46,6 +47,12 @@ const navItems: NavItem[] = [
     label: "GRC Center",
     icon: Shield,
     description: "Compliance & audit",
+  },
+  {
+    id: "infrastructure",
+    label: "Infrastructure",
+    icon: Cloud,
+    description: "Cloud & K8s migration",
   },
   {
     id: "network",

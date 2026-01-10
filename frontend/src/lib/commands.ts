@@ -25,6 +25,19 @@ import type {
   Evidence,
   CreateEvidenceRequest,
   AssessmentSummary,
+  CloudReadinessItem,
+  CloudReadinessAssessment,
+  PerformReadinessAssessmentRequest,
+  K8sHardeningCheck,
+  K8sHardeningAudit,
+  PerformK8sAuditRequest,
+  K8sSeverityStats,
+  FinOpsTemplate,
+  FinOpsAnalysis,
+  GenerateFinOpsAnalysisRequest,
+  CalculateResourceCostRequest,
+  ProviderComparison,
+  CompareProvidersRequest,
 } from "@/types";
 
 // ============================================================================
@@ -249,4 +262,99 @@ export async function getAssessmentSummary(
   assessmentId: string
 ): Promise<AssessmentSummary> {
   return invoke<AssessmentSummary>("get_assessment_summary", { assessmentId });
+}
+
+// ============================================================================
+// Infrastructure Commands (Cloud Migration & K8s Hardening)
+// ============================================================================
+
+/**
+ * Get all cloud readiness checklist items
+ */
+export async function getCloudReadinessItems(): Promise<CloudReadinessItem[]> {
+  return invoke<CloudReadinessItem[]>("get_cloud_readiness_items");
+}
+
+/**
+ * Get cloud readiness items by category
+ */
+export async function getCloudReadinessByCategory(
+  category: string
+): Promise<CloudReadinessItem[]> {
+  return invoke<CloudReadinessItem[]>("get_cloud_readiness_by_category", { category });
+}
+
+/**
+ * Perform cloud readiness assessment
+ */
+export async function assessCloudReadiness(
+  request: PerformReadinessAssessmentRequest
+): Promise<CloudReadinessAssessment> {
+  return invoke<CloudReadinessAssessment>("assess_cloud_readiness", { request });
+}
+
+/**
+ * Get all K8s hardening checks
+ */
+export async function getK8sHardeningChecklist(): Promise<K8sHardeningCheck[]> {
+  return invoke<K8sHardeningCheck[]>("get_k8s_hardening_checklist");
+}
+
+/**
+ * Get K8s hardening checks by category
+ */
+export async function getK8sHardeningByCategory(
+  category: string
+): Promise<K8sHardeningCheck[]> {
+  return invoke<K8sHardeningCheck[]>("get_k8s_hardening_by_category", { category });
+}
+
+/**
+ * Perform K8s hardening audit
+ */
+export async function auditK8sHardening(
+  request: PerformK8sAuditRequest
+): Promise<K8sHardeningAudit> {
+  return invoke<K8sHardeningAudit>("audit_k8s_hardening", { request });
+}
+
+/**
+ * Get K8s severity statistics
+ */
+export async function getK8sSeverityStats(): Promise<K8sSeverityStats> {
+  return invoke<K8sSeverityStats>("get_k8s_severity_stats");
+}
+
+/**
+ * Get FinOps resource templates
+ */
+export async function getFinOpsTemplates(): Promise<FinOpsTemplate[]> {
+  return invoke<FinOpsTemplate[]>("get_finops_templates");
+}
+
+/**
+ * Calculate cost for a single resource
+ */
+export async function calculateSingleResourceCost(
+  request: CalculateResourceCostRequest
+): Promise<number> {
+  return invoke<number>("calculate_single_resource_cost", { request });
+}
+
+/**
+ * Generate full FinOps analysis
+ */
+export async function generateFinOpsReport(
+  request: GenerateFinOpsAnalysisRequest
+): Promise<FinOpsAnalysis> {
+  return invoke<FinOpsAnalysis>("generate_finops_report", { request });
+}
+
+/**
+ * Compare costs across cloud providers
+ */
+export async function compareCloudProviders(
+  request: CompareProvidersRequest
+): Promise<ProviderComparison[]> {
+  return invoke<ProviderComparison[]>("compare_cloud_providers", { request });
 }
