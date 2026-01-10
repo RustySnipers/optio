@@ -553,6 +553,245 @@ export interface CompareProvidersRequest {
 }
 
 // ============================================================================
+// Network Intelligence Types
+// ============================================================================
+
+export type ScanType =
+  | "ping_sweep"
+  | "quick_scan"
+  | "standard_scan"
+  | "full_scan"
+  | "service_detection"
+  | "os_detection"
+  | "vulnerability_scan"
+  | "udp_scan"
+  | "custom";
+
+export type ScanStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type PortState =
+  | "open"
+  | "closed"
+  | "filtered"
+  | "unfiltered"
+  | "open_filtered"
+  | "closed_filtered";
+
+export type Protocol = "tcp" | "udp" | "sctp";
+
+export type AssetCategory =
+  | "server"
+  | "workstation"
+  | "network_device"
+  | "security_device"
+  | "printer"
+  | "iot"
+  | "mobile"
+  | "virtual"
+  | "cloud"
+  | "unknown";
+
+export type AssetCriticality =
+  | "critical"
+  | "high"
+  | "medium"
+  | "low"
+  | "informational";
+
+export type AssetStatus =
+  | "active"
+  | "inactive"
+  | "decommissioned"
+  | "pending"
+  | "maintenance";
+
+export interface NmapInfo {
+  installed: boolean;
+  version: string | null;
+  path: string | null;
+}
+
+export interface ScanTypeInfo {
+  scanType: ScanType;
+  name: string;
+  description: string;
+  duration: string;
+  requiresRoot: boolean;
+}
+
+export interface CommonPort {
+  port: number;
+  service: string;
+  description: string;
+}
+
+export interface TargetValidation {
+  valid: boolean;
+  targetType: string | null;
+  normalized: string | null;
+  error: string | null;
+}
+
+export interface ScanConfig {
+  targets: string[];
+  scanType: ScanType;
+  customArgs?: string;
+  ports?: string;
+  excludeTargets?: string[];
+  aggressive: boolean;
+  skipDiscovery: boolean;
+}
+
+export interface ScanJob {
+  id: string;
+  clientId: string;
+  name: string;
+  config: ScanConfig;
+  status: ScanStatus;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  error: string | null;
+  progress: number;
+  rawOutput: string | null;
+}
+
+export interface CreateScanRequest {
+  clientId: string;
+  name: string;
+  targets: string[];
+  scanType: string;
+  customArgs?: string;
+  ports?: string;
+  excludeTargets?: string[];
+  aggressive: boolean;
+  skipDiscovery: boolean;
+}
+
+export interface DiscoveredPort {
+  port: number;
+  protocol: Protocol;
+  state: PortState;
+  service: string | null;
+  product: string | null;
+  version: string | null;
+  extraInfo: string | null;
+}
+
+export interface OsMatch {
+  name: string;
+  accuracy: number;
+  osFamily: string | null;
+  osGen: string | null;
+  deviceType: string | null;
+}
+
+export interface DiscoveredHost {
+  ipAddress: string;
+  macAddress: string | null;
+  hostname: string | null;
+  vendor: string | null;
+  status: string;
+  ports: DiscoveredPort[];
+  osMatches: OsMatch[];
+}
+
+export interface AssetService {
+  port: number;
+  protocol: Protocol;
+  name: string;
+  version: string | null;
+  state: PortState;
+}
+
+export interface Asset {
+  id: string;
+  clientId: string;
+  name: string;
+  ipAddress: string;
+  macAddress: string | null;
+  category: AssetCategory;
+  operatingSystem: string | null;
+  criticality: AssetCriticality;
+  status: AssetStatus;
+  location: string | null;
+  owner: string | null;
+  description: string | null;
+  services: AssetService[];
+  tags: string[];
+  firstSeen: string;
+  lastSeen: string;
+  scanIds: string[];
+}
+
+export interface AssetGroup {
+  id: string;
+  clientId: string;
+  name: string;
+  description: string | null;
+  assetIds: string[];
+  color: string | null;
+}
+
+export interface UpdateAssetRequest {
+  id: string;
+  name: string;
+  category: string;
+  criticality: string;
+  status: string;
+  location?: string;
+  owner?: string;
+  description?: string;
+  tags: string[];
+}
+
+export interface CreateGroupRequest {
+  clientId: string;
+  name: string;
+  description?: string;
+}
+
+export interface CategoryCount {
+  category: AssetCategory;
+  count: number;
+}
+
+export interface CriticalityCount {
+  criticality: AssetCriticality;
+  count: number;
+}
+
+export interface ServiceCount {
+  service: string;
+  port: number;
+  count: number;
+}
+
+export interface ScanSummary {
+  id: string;
+  name: string;
+  scanType: ScanType;
+  status: ScanStatus;
+  hostsFound: number;
+  completedAt: string | null;
+}
+
+export interface NetworkStats {
+  totalAssets: number;
+  activeAssets: number;
+  totalScans: number;
+  byCategory: CategoryCount[];
+  byCriticality: CriticalityCount[];
+  topServices: ServiceCount[];
+  recentScans: ScanSummary[];
+}
+
+// ============================================================================
 // Error Types
 // ============================================================================
 

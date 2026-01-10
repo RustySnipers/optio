@@ -38,6 +38,17 @@ import type {
   CalculateResourceCostRequest,
   ProviderComparison,
   CompareProvidersRequest,
+  NmapInfo,
+  ScanTypeInfo,
+  CommonPort,
+  TargetValidation,
+  ScanJob,
+  CreateScanRequest,
+  Asset,
+  AssetGroup,
+  UpdateAssetRequest,
+  CreateGroupRequest,
+  NetworkStats,
 } from "@/types";
 
 // ============================================================================
@@ -357,4 +368,151 @@ export async function compareCloudProviders(
   request: CompareProvidersRequest
 ): Promise<ProviderComparison[]> {
   return invoke<ProviderComparison[]>("compare_cloud_providers", { request });
+}
+
+// ============================================================================
+// Network Intelligence Commands
+// ============================================================================
+
+/**
+ * Check if Nmap is installed
+ */
+export async function checkNmap(): Promise<NmapInfo> {
+  return invoke<NmapInfo>("check_nmap");
+}
+
+/**
+ * Get available scan types
+ */
+export async function getScanTypeList(): Promise<ScanTypeInfo[]> {
+  return invoke<ScanTypeInfo[]>("get_scan_type_list");
+}
+
+/**
+ * Get common ports reference
+ */
+export async function getCommonPortList(): Promise<CommonPort[]> {
+  return invoke<CommonPort[]>("get_common_port_list");
+}
+
+/**
+ * Validate a scan target
+ */
+export async function validateScanTarget(target: string): Promise<TargetValidation> {
+  return invoke<TargetValidation>("validate_scan_target", { target });
+}
+
+/**
+ * Create a new scan job
+ */
+export async function createScan(request: CreateScanRequest): Promise<ScanJob> {
+  return invoke<ScanJob>("create_scan", { request });
+}
+
+/**
+ * Preview the Nmap command that would be executed
+ */
+export async function previewScanCommand(
+  targets: string[],
+  scanType: string,
+  ports?: string,
+  aggressive?: boolean
+): Promise<string> {
+  return invoke<string>("preview_scan_command", {
+    targets,
+    scanType,
+    ports,
+    aggressive: aggressive ?? false,
+  });
+}
+
+/**
+ * List all scans for a client
+ */
+export async function listScans(clientId: string): Promise<ScanJob[]> {
+  return invoke<ScanJob[]>("list_scans", { clientId });
+}
+
+/**
+ * Get a specific scan by ID
+ */
+export async function getScan(scanId: string): Promise<ScanJob | null> {
+  return invoke<ScanJob | null>("get_scan", { scanId });
+}
+
+/**
+ * Delete a scan
+ */
+export async function deleteScan(scanId: string): Promise<boolean> {
+  return invoke<boolean>("delete_scan", { scanId });
+}
+
+/**
+ * Get all assets for a client
+ */
+export async function listAssets(clientId: string): Promise<Asset[]> {
+  return invoke<Asset[]>("list_assets", { clientId });
+}
+
+/**
+ * Get demo assets for development
+ */
+export async function getDemoAssets(clientId: string): Promise<Asset[]> {
+  return invoke<Asset[]>("get_demo_assets", { clientId });
+}
+
+/**
+ * Get a specific asset by ID
+ */
+export async function getAsset(assetId: string): Promise<Asset | null> {
+  return invoke<Asset | null>("get_asset", { assetId });
+}
+
+/**
+ * Update an asset
+ */
+export async function updateAsset(request: UpdateAssetRequest): Promise<Asset> {
+  return invoke<Asset>("update_asset", { request });
+}
+
+/**
+ * Delete an asset
+ */
+export async function deleteAsset(assetId: string): Promise<boolean> {
+  return invoke<boolean>("delete_asset", { assetId });
+}
+
+/**
+ * Get network statistics for a client
+ */
+export async function getNetworkStats(clientId: string): Promise<NetworkStats> {
+  return invoke<NetworkStats>("get_network_stats", { clientId });
+}
+
+/**
+ * Create a new asset group
+ */
+export async function createAssetGroup(request: CreateGroupRequest): Promise<AssetGroup> {
+  return invoke<AssetGroup>("create_asset_group", { request });
+}
+
+/**
+ * List all asset groups for a client
+ */
+export async function listAssetGroups(clientId: string): Promise<AssetGroup[]> {
+  return invoke<AssetGroup[]>("list_asset_groups", { clientId });
+}
+
+/**
+ * Add asset to a group
+ */
+export async function addAssetToGroup(groupId: string, assetId: string): Promise<void> {
+  return invoke<void>("add_asset_to_group", { groupId, assetId });
+}
+
+/**
+ * Remove asset from a group
+ */
+export async function removeAssetFromGroup(groupId: string, assetId: string): Promise<void> {
+  return invoke<void>("remove_asset_from_group", { groupId, assetId });
 }
