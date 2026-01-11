@@ -5,6 +5,7 @@ import { ClientOnboarding } from "@/components/ClientOnboarding";
 import { GRCCommandCenter } from "@/components/GRCCommandCenter";
 import { InfrastructureMigration } from "@/components/InfrastructureMigration";
 import { NetworkIntelligence } from "@/components/NetworkIntelligence";
+import { ReportingCenter } from "@/components/ReportingCenter";
 import { Header } from "@/components/Header";
 import { getSystemInfo } from "@/lib/commands";
 import type { ViewMode, SystemInfo } from "@/types";
@@ -39,6 +40,8 @@ function App() {
         return <InfrastructureMigration />;
       case "network":
         return <NetworkIntelligence />;
+      case "reporting":
+        return <ReportingCenter />;
       case "settings":
         return (
           <div className="p-8">

@@ -109,7 +109,7 @@ export interface SystemInfo {
 // UI State Types
 // ============================================================================
 
-export type ViewMode = 'dashboard' | 'clients' | 'factory' | 'grc' | 'infrastructure' | 'network' | 'settings';
+export type ViewMode = 'dashboard' | 'clients' | 'factory' | 'grc' | 'infrastructure' | 'network' | 'reporting' | 'settings';
 
 export interface AppState {
   currentView: ViewMode;
@@ -789,6 +789,207 @@ export interface NetworkStats {
   byCriticality: CriticalityCount[];
   topServices: ServiceCount[];
   recentScans: ScanSummary[];
+}
+
+// ============================================================================
+// Reporting Types
+// ============================================================================
+
+export type ReportType =
+  | "ExecutiveSummary"
+  | "TechnicalAssessment"
+  | "ComplianceReport"
+  | "NetworkAssessment"
+  | "CloudReadiness"
+  | "SecurityFindings"
+  | "FullEngagement";
+
+export type ExportFormat = "Pdf" | "Html" | "Markdown" | "Docx" | "Json";
+
+export type ReportStatus =
+  | "Draft"
+  | "Generating"
+  | "Ready"
+  | "Error"
+  | "Archived";
+
+export interface ReportTemplate {
+  reportType: ReportType;
+  name: string;
+  description: string;
+  sections: ReportSectionDef[];
+}
+
+export interface ReportSectionDef {
+  id: string;
+  title: string;
+  description: string;
+  required: boolean;
+  order: number;
+}
+
+export interface ReportTypeInfo {
+  reportType: ReportType;
+  name: string;
+  description: string;
+  icon: string;
+}
+
+export interface ExportFormatInfo {
+  format: ExportFormat;
+  name: string;
+  extension: string;
+  mimeType: string;
+}
+
+export interface GenerateReportRequest {
+  reportType: string;
+  clientId: string;
+  clientName: string;
+  title: string;
+  subtitle?: string;
+  author: string;
+  organization?: string;
+  format: string;
+  includeToc: boolean;
+  includeExecutiveSummary: boolean;
+  includeAppendices: boolean;
+  includeCharts: boolean;
+  classification?: string;
+  notes?: string;
+}
+
+export interface ReportConfig {
+  reportType: ReportType;
+  clientId: string;
+  clientName: string;
+  title: string;
+  subtitle: string | null;
+  author: string;
+  organization: string | null;
+  format: ExportFormat;
+  includeToc: boolean;
+  includeExecutiveSummary: boolean;
+  includeAppendices: boolean;
+  includeCharts: boolean;
+  logoPath: string | null;
+  primaryColor: string | null;
+  notes: string | null;
+  classification: string | null;
+  dataSources: string[];
+}
+
+export interface ReportContent {
+  sections: ReportSection[];
+  generatedAt: string;
+  wordCount: number;
+  pageEstimate: number;
+}
+
+export interface ReportSection {
+  id: string;
+  title: string;
+  order: number;
+  content: ContentBlock[];
+}
+
+export type ContentBlock =
+  | { type: "Paragraph"; text: string }
+  | { type: "Heading"; level: number; text: string }
+  | { type: "BulletList"; items: string[] }
+  | { type: "NumberedList"; items: string[] }
+  | { type: "Table"; data: TableData }
+  | { type: "Chart"; data: ChartData }
+  | { type: "Finding"; data: FindingData }
+  | { type: "Metric"; data: MetricData }
+  | { type: "Callout"; calloutType: CalloutType; title: string; content: string }
+  | { type: "KeyValue"; pairs: Record<string, string> }
+  | { type: "PageBreak" }
+  | { type: "Spacer"; height: number };
+
+export interface TableData {
+  headers: string[];
+  rows: string[][];
+  caption: string | null;
+}
+
+export interface ChartData {
+  chartType: ChartType;
+  title: string;
+  labels: string[];
+  datasets: ChartDataset[];
+}
+
+export type ChartType = "Bar" | "Line" | "Pie" | "Doughnut" | "Radar";
+
+export interface ChartDataset {
+  label: string;
+  data: number[];
+  color: string | null;
+}
+
+export interface FindingData {
+  id: string;
+  title: string;
+  severity: string;
+  description: string;
+  impact: string;
+  recommendation: string;
+  affectedAssets: string[];
+  references: string[];
+}
+
+export interface MetricData {
+  label: string;
+  value: string;
+  change: number | null;
+  trend: "Up" | "Down" | "Stable" | null;
+  color: string | null;
+}
+
+export type CalloutType = "Info" | "Warning" | "Critical" | "Success" | "Note";
+
+export interface Report {
+  id: string;
+  clientId: string;
+  config: ReportConfig;
+  status: ReportStatus;
+  content: ReportContent | null;
+  createdAt: string;
+  updatedAt: string;
+  generatedAt: string | null;
+  fileSize: number | null;
+  filePath: string | null;
+  error: string | null;
+}
+
+export interface ReportSummary {
+  id: string;
+  title: string;
+  reportType: ReportType;
+  clientName: string;
+  status: ReportStatus;
+  format: ExportFormat;
+  createdAt: string;
+  fileSize: number | null;
+}
+
+export interface ReportTypeCount {
+  reportType: ReportType;
+  count: number;
+}
+
+export interface ReportStatusCount {
+  status: ReportStatus;
+  count: number;
+}
+
+export interface ReportStats {
+  totalReports: number;
+  reportsThisMonth: number;
+  byType: ReportTypeCount[];
+  byStatus: ReportStatusCount[];
+  recentReports: ReportSummary[];
 }
 
 // ============================================================================
