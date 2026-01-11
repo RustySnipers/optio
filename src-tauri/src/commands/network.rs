@@ -507,3 +507,31 @@ fn parse_asset_status(s: &str) -> Result<AssetStatus, String> {
         _ => Err(format!("Unknown asset status: {}", s)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_scan_type_accepts_aliases() {
+        assert_eq!(parse_scan_type("ping").unwrap(), ScanType::PingSweep);
+        assert_eq!(parse_scan_type("quick_scan").unwrap(), ScanType::QuickScan);
+        assert_eq!(parse_scan_type("OS").unwrap(), ScanType::OsDetection);
+    }
+
+    #[test]
+    fn parse_scan_type_rejects_unknown_values() {
+        let err = parse_scan_type("unknown").expect_err("invalid scan type");
+        assert!(err.contains("Unknown scan type"));
+    }
+
+    #[test]
+    fn parse_asset_fields_validate_inputs() {
+        assert_eq!(
+            parse_asset_category("network_device").unwrap(),
+            AssetCategory::NetworkDevice
+        );
+        assert_eq!(parse_criticality("info").unwrap(), Criticality::Informational);
+        assert_eq!(parse_asset_status("maintenance").unwrap(), AssetStatus::Maintenance);
+    }
+}

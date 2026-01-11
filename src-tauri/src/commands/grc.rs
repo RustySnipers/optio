@@ -675,3 +675,36 @@ fn get_category_info(framework: Framework, category: &str) -> (String, String) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_framework_param_accepts_known_values() {
+        assert_eq!(
+            parse_framework_param("NIST CSF 2.0").unwrap(),
+            Framework::NistCsf2
+        );
+        assert_eq!(parse_framework_param("SOC2").unwrap(), Framework::Soc2TypeII);
+        assert_eq!(parse_framework_param("GDPR").unwrap(), Framework::Gdpr);
+    }
+
+    #[test]
+    fn parse_assessment_status_param_rejects_unknown() {
+        let err = parse_assessment_status_param("oops").expect_err("invalid status");
+        assert!(err.contains("Unknown assessment status"));
+    }
+
+    #[test]
+    fn parse_compliance_status_param_supports_aliases() {
+        assert_eq!(
+            parse_compliance_status_param("not_assessed").unwrap(),
+            ComplianceStatus::NotAssessed
+        );
+        assert_eq!(
+            parse_compliance_status_param("N/A").unwrap(),
+            ComplianceStatus::NotApplicable
+        );
+    }
+}
