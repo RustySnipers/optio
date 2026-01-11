@@ -361,6 +361,60 @@ Write-OptioLog "Log file: $Script:LogPath" "INFO"
 Write-OptioLog "========================================" "INFO"
 "#;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_config() -> ScriptConfig {
+        ScriptConfig {
+            client_id: "client-123".to_string(),
+            client_name: "Acme Corp".to_string(),
+            target_subnet: "192.168.1.0/24".to_string(),
+            consultant_ip: "10.0.0.5".to_string(),
+            enable_winrm: true,
+            configure_dns: false,
+            dns_servers: vec![],
+            install_agent: false,
+            agent_installer: None,
+            enable_firewall_logging: false,
+            custom_commands: vec!["Write-Host \"Hello\"".to_string()],
+        }
+    }
+
+    #[test]
+    fn generate_injects_placeholders_and_warnings() {
+        let temp_dir = std::env::temp_dir().join(format!("optio-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let generator = ScriptGenerator::new(temp_dir);
+        let result = generator
+            .generate("smart_prep", &sample_config())
+            .expect("script generation succeeds");
+
+        assert!(result.content.contains("Acme Corp"));
+        assert!(result.content.contains("192.168.1.0/24"));
+        assert!(result.content.contains("Custom command"));
+        assert_eq!(result.warnings.len(), 2);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|w| w.contains("WinRM")));
+    }
+
+    #[test]
+    fn list_templates_includes_custom_ps1() {
+        let temp_dir = std::env::temp_dir().join(format!("optio-test-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+        let custom_path = temp_dir.join("custom_audit.ps1");
+        std::fs::write(&custom_path, "# custom").expect("write template");
+
+        let generator = ScriptGenerator::new(temp_dir);
+        let templates = generator.list_templates().expect("list templates");
+
+        assert!(templates.iter().any(|t| t.name == "custom_audit"));
+    }
+}
+
 /// WinRM Setup template
 const WINRM_SETUP_TEMPLATE: &str = r#"<#
 .SYNOPSIS

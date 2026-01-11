@@ -82,6 +82,30 @@ pub fn get_framework_categories(framework: Framework) -> Vec<CategoryInfo> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn available_frameworks_include_expected_metadata() {
+        let frameworks = get_available_frameworks();
+
+        assert_eq!(frameworks.len(), 3);
+        let nist = frameworks
+            .iter()
+            .find(|framework| framework.id == "NistCsf2")
+            .expect("NIST CSF 2.0 present");
+        assert!(nist.control_count > 0);
+        assert!(nist.categories.iter().any(|category| category.code == "GV"));
+    }
+
+    #[test]
+    fn framework_controls_return_non_empty_sets() {
+        let controls = get_framework_controls(Framework::Gdpr);
+        assert!(!controls.is_empty());
+    }
+}
+
 /// NIST CSF 2.0 Controls
 fn get_nist_csf2_controls() -> Vec<Control> {
     vec![

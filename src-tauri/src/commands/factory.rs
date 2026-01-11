@@ -389,3 +389,61 @@ pub async fn generate_agent_script(
         warnings: result.warnings,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn validate_config_flags_missing_inputs() {
+        let request = ValidateConfigRequest {
+            client_name: "   ".to_string(),
+            target_subnet: "invalid".to_string(),
+            config: ScriptConfigOptions {
+                enable_winrm: false,
+                configure_dns: true,
+                dns_servers: None,
+                install_agent: true,
+                agent_installer: Some(" ".to_string()),
+                enable_firewall_logging: false,
+                custom_commands: None,
+            },
+        };
+
+        let result = validate_config(request).await.expect("validation succeeds");
+
+        assert!(!result.valid);
+        assert!(result.errors.iter().any(|e| e.contains("Client name")));
+        assert!(result.errors.iter().any(|e| e.contains("Invalid subnet")));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.contains("DNS servers")));
+        assert!(result
+            .errors
+            .iter()
+            .any(|e| e.contains("Agent installer")));
+    }
+
+    #[tokio::test]
+    async fn validate_config_returns_warnings() {
+        let request = ValidateConfigRequest {
+            client_name: "Acme".to_string(),
+            target_subnet: "10.0.0.0/24".to_string(),
+            config: ScriptConfigOptions {
+                enable_winrm: true,
+                configure_dns: false,
+                dns_servers: None,
+                install_agent: false,
+                agent_installer: None,
+                enable_firewall_logging: false,
+                custom_commands: Some(vec!["Write-Host \"Hi\"".to_string()]),
+            },
+        };
+
+        let result = validate_config(request).await.expect("validation succeeds");
+
+        assert!(result.valid);
+        assert_eq!(result.warnings.len(), 2);
+    }
+}

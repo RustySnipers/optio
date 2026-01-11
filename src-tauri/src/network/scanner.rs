@@ -569,6 +569,43 @@ pub fn get_common_ports() -> Vec<CommonPort> {
     ]
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn build_nmap_command_includes_flags_and_targets() {
+        let config = ScanConfig {
+            targets: vec!["192.168.0.1".to_string()],
+            scan_type: ScanType::QuickScan,
+            custom_args: None,
+            ports: Some("80,443".to_string()),
+            exclude_targets: Some(vec!["192.168.0.99".to_string()]),
+            aggressive: true,
+            skip_discovery: true,
+            output_formats: vec![OutputFormat::Xml],
+        };
+
+        let args = build_nmap_command(&config);
+
+        assert!(args.contains(&"-sS".to_string()));
+        assert!(args.contains(&"-T5".to_string()));
+        assert!(args.contains(&"-Pn".to_string()));
+        assert!(args.contains(&"-p".to_string()));
+        assert!(args.contains(&"80,443".to_string()));
+        assert!(args.contains(&"--exclude".to_string()));
+        assert!(args.contains(&"192.168.0.99".to_string()));
+        assert!(args.contains(&"192.168.0.1".to_string()));
+    }
+
+    #[test]
+    fn parse_nmap_version_extracts_version() {
+        let sample = "Nmap version 7.94 ( https://nmap.org )\nPlatform: x86_64";
+        let version = parse_nmap_version(sample);
+        assert_eq!(version.as_deref(), Some("7.94"));
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommonPort {
