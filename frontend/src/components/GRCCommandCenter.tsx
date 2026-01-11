@@ -496,6 +496,24 @@ interface HeatmapProps {
   frameworks: FrameworkInfo[];
 }
 
+const categoryColorClasses: Record<string, string> = {
+  "#8b5cf6": "bg-violet-500",
+  "#3b82f6": "bg-blue-500",
+  "#22c55e": "bg-green-500",
+  "#f59e0b": "bg-amber-500",
+  "#ef4444": "bg-red-500",
+  "#06b6d4": "bg-cyan-500",
+  "#ec4899": "bg-pink-500",
+  "#64748b": "bg-slate-500",
+};
+
+const toWidthClass = (percentage: number) => {
+  const clamped = Math.max(0, Math.min(100, Math.round(percentage)));
+  return `w-[${clamped}%]`;
+};
+
+const toPercentage = (count: number, total: number) => (total > 0 ? (count / total) * 100 : 0);
+
 function ComplianceHeatmap({ summary, selectedFramework, frameworks }: HeatmapProps) {
   // Find framework for potential future use
   const _framework = frameworks.find((f) => f.id === selectedFramework);
@@ -524,8 +542,10 @@ function ComplianceHeatmap({ summary, selectedFramework, frameworks }: HeatmapPr
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <div
-                  className="w-3 h-3 rounded-full"
-                  style={{ backgroundColor: cat.color }}
+                  className={cn(
+                    "w-3 h-3 rounded-full",
+                    categoryColorClasses[cat.color] ?? "bg-slate-500"
+                  )}
                 />
                 <span className="font-medium text-white">{cat.displayName}</span>
               </div>
@@ -547,26 +567,34 @@ function ComplianceHeatmap({ summary, selectedFramework, frameworks }: HeatmapPr
             <div className="h-3 bg-slate-900 rounded-full overflow-hidden flex">
               {cat.compliant > 0 && (
                 <div
-                  className="bg-secure"
-                  style={{ width: `${(cat.compliant / cat.totalControls) * 100}%` }}
+                  className={cn(
+                    "bg-secure",
+                    toWidthClass(toPercentage(cat.compliant, cat.totalControls))
+                  )}
                 />
               )}
               {cat.partiallyCompliant > 0 && (
                 <div
-                  className="bg-warning"
-                  style={{ width: `${(cat.partiallyCompliant / cat.totalControls) * 100}%` }}
+                  className={cn(
+                    "bg-warning",
+                    toWidthClass(toPercentage(cat.partiallyCompliant, cat.totalControls))
+                  )}
                 />
               )}
               {cat.nonCompliant > 0 && (
                 <div
-                  className="bg-critical"
-                  style={{ width: `${(cat.nonCompliant / cat.totalControls) * 100}%` }}
+                  className={cn(
+                    "bg-critical",
+                    toWidthClass(toPercentage(cat.nonCompliant, cat.totalControls))
+                  )}
                 />
               )}
               {cat.notAssessed > 0 && (
                 <div
-                  className="bg-slate-600"
-                  style={{ width: `${(cat.notAssessed / cat.totalControls) * 100}%` }}
+                  className={cn(
+                    "bg-slate-600",
+                    toWidthClass(toPercentage(cat.notAssessed, cat.totalControls))
+                  )}
                 />
               )}
             </div>
@@ -732,6 +760,7 @@ interface StatusBarProps {
 
 function StatusBar({ label, count, total, color }: StatusBarProps) {
   const percentage = total > 0 ? (count / total) * 100 : 0;
+  const widthClass = toWidthClass(percentage);
 
   return (
     <div>
@@ -740,7 +769,7 @@ function StatusBar({ label, count, total, color }: StatusBarProps) {
         <span className="text-white">{count}</span>
       </div>
       <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-        <div className={cn("h-full rounded-full", color)} style={{ width: `${percentage}%` }} />
+        <div className={cn("h-full rounded-full", color, widthClass)} />
       </div>
     </div>
   );
