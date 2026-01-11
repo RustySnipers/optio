@@ -33,7 +33,6 @@ import {
   BarChart3,
   List,
   Grid3X3,
-  Filter,
   Search,
   RefreshCw,
   TrendingUp,
@@ -498,7 +497,9 @@ interface HeatmapProps {
 }
 
 function ComplianceHeatmap({ summary, selectedFramework, frameworks }: HeatmapProps) {
-  const framework = frameworks.find((f) => f.id === selectedFramework);
+  // Find framework for potential future use
+  const _framework = frameworks.find((f) => f.id === selectedFramework);
+  void _framework; // Suppress unused variable warning
 
   if (!summary) {
     return (
@@ -698,6 +699,7 @@ function StatusButton({ status, currentStatus, onClick }: StatusButtonProps) {
   const isActive = currentStatus === status;
 
   const config = {
+    NOT_ASSESSED: { icon: HelpCircle, color: "text-slate-500", bg: "bg-slate-700/20" },
     COMPLIANT: { icon: CheckCircle2, color: "text-secure", bg: "bg-secure/20" },
     PARTIALLY_COMPLIANT: { icon: AlertTriangle, color: "text-warning", bg: "bg-warning/20" },
     NON_COMPLIANT: { icon: XCircle, color: "text-critical", bg: "bg-critical/20" },

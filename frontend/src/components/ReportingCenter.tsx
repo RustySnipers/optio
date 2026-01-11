@@ -15,7 +15,6 @@ import {
   RefreshCw,
   FileJson,
   FileCode,
-  File,
   CheckCircle,
   Clock,
   AlertTriangle,
@@ -50,7 +49,6 @@ import type {
   GenerateReportRequest,
   ReportType,
   ReportStatus,
-  ExportFormat,
   PdfGenerationResult,
 } from "@/types";
 
