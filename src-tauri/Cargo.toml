@@ -34,6 +34,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 hostname = "0.4"
 whoami = "1.5"
+ipnetwork = "0.20"
+futures = "0.3"
 
 [features]
 default = ["custom-protocol"]

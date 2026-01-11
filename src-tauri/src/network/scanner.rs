@@ -1,12 +1,19 @@
-//! Nmap Scanner Wrapper
+//! Nmap Scanner Wrapper and Native TCP Scanner
 //!
 //! Provides a safe wrapper around Nmap for network discovery and scanning.
+//! Also includes a native Rust TCP connect scanner for lightweight scanning.
 //! Handles command construction, execution, and result parsing.
 
 use super::models::*;
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process::Command;
+use std::time::Duration;
+use tokio::net::TcpStream;
+use tokio::time::timeout;
 use uuid::Uuid;
+use futures::stream::{self, StreamExt};
+use ipnetwork::IpNetwork;
 
 /// Check if Nmap is installed and available
 pub fn check_nmap_installed() -> Result<NmapInfo, String> {
@@ -570,6 +577,243 @@ pub struct CommonPort {
     pub description: &'static str,
 }
 
+// ============================================================================
+// Native Rust TCP Scanner (Task B - Core Mechanics)
+// ============================================================================
+
+/// Default ports to scan for common services
+pub const DEFAULT_SCAN_PORTS: &[u16] = &[22, 80, 443, 3389];
+
+/// Extended set of common ports for more thorough scanning
+pub const EXTENDED_SCAN_PORTS: &[u16] = &[
+    21, 22, 23, 25, 53, 80, 110, 135, 139, 143,
+    443, 445, 993, 995, 1433, 1521, 3306, 3389,
+    5432, 5900, 6379, 8080, 8443, 27017,
+];
+
+/// Configuration for the native TCP scanner
+#[derive(Debug, Clone)]
+pub struct TcpScannerConfig {
+    /// Connection timeout per port
+    pub timeout: Duration,
+    /// Ports to scan
+    pub ports: Vec<u16>,
+    /// Maximum concurrent connection attempts
+    pub concurrency: usize,
+}
+
+impl Default for TcpScannerConfig {
+    fn default() -> Self {
+        Self {
+            timeout: Duration::from_secs(2),
+            ports: DEFAULT_SCAN_PORTS.to_vec(),
+            concurrency: 100,
+        }
+    }
+}
+
+/// Result of scanning a single host
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannedHost {
+    /// IP address of the host
+    pub ip_address: String,
+    /// Open ports discovered
+    pub open_ports: Vec<ScannedPort>,
+    /// Whether the host responded to any port
+    pub is_alive: bool,
+    /// Hostname if resolved
+    pub hostname: Option<String>,
+}
+
+/// Result of scanning a single port
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScannedPort {
+    /// Port number
+    pub port: u16,
+    /// Whether the port is open
+    pub open: bool,
+    /// Service name (based on port number)
+    pub service: String,
+}
+
+/// Native Rust TCP connect scanner
+pub struct TcpScanner {
+    config: TcpScannerConfig,
+}
+
+impl TcpScanner {
+    /// Create a new TCP scanner with default configuration
+    pub fn new() -> Self {
+        Self {
+            config: TcpScannerConfig::default(),
+        }
+    }
+
+    /// Create a TCP scanner with custom configuration
+    pub fn with_config(config: TcpScannerConfig) -> Self {
+        Self { config }
+    }
+
+    /// Parse CIDR notation and return all IP addresses in the range
+    fn parse_cidr(cidr: &str) -> Result<Vec<Ipv4Addr>, String> {
+        let network: IpNetwork = cidr.parse()
+            .map_err(|e| format!("Invalid CIDR notation: {}", e))?;
+
+        match network {
+            IpNetwork::V4(net) => {
+                // Limit to /16 (65536 hosts) to prevent accidental huge scans
+                if net.prefix() < 16 {
+                    return Err("CIDR range too large. Maximum is /16 (65536 hosts)".to_string());
+                }
+                Ok(net.iter().collect())
+            }
+            IpNetwork::V6(_) => {
+                Err("IPv6 scanning is not yet supported".to_string())
+            }
+        }
+    }
+
+    /// Check if a single port is open on a host
+    async fn check_port(ip: Ipv4Addr, port: u16, timeout_duration: Duration) -> bool {
+        let addr = SocketAddr::new(IpAddr::V4(ip), port);
+
+        match timeout(timeout_duration, TcpStream::connect(addr)).await {
+            Ok(Ok(_stream)) => true,  // Connection successful
+            Ok(Err(_)) => false,       // Connection refused/failed
+            Err(_) => false,           // Timeout
+        }
+    }
+
+    /// Get service name for a port number
+    fn get_service_name(port: u16) -> String {
+        match port {
+            21 => "FTP".to_string(),
+            22 => "SSH".to_string(),
+            23 => "Telnet".to_string(),
+            25 => "SMTP".to_string(),
+            53 => "DNS".to_string(),
+            80 => "HTTP".to_string(),
+            110 => "POP3".to_string(),
+            135 => "MSRPC".to_string(),
+            139 => "NetBIOS".to_string(),
+            143 => "IMAP".to_string(),
+            443 => "HTTPS".to_string(),
+            445 => "SMB".to_string(),
+            993 => "IMAPS".to_string(),
+            995 => "POP3S".to_string(),
+            1433 => "MSSQL".to_string(),
+            1521 => "Oracle".to_string(),
+            3306 => "MySQL".to_string(),
+            3389 => "RDP".to_string(),
+            5432 => "PostgreSQL".to_string(),
+            5900 => "VNC".to_string(),
+            6379 => "Redis".to_string(),
+            8080 => "HTTP-Alt".to_string(),
+            8443 => "HTTPS-Alt".to_string(),
+            27017 => "MongoDB".to_string(),
+            _ => format!("port-{}", port),
+        }
+    }
+
+    /// Scan a single host for open ports
+    async fn scan_host(&self, ip: Ipv4Addr) -> ScannedHost {
+        let mut open_ports = Vec::new();
+
+        // Create a stream of port scanning futures
+        let port_results: Vec<(u16, bool)> = stream::iter(self.config.ports.clone())
+            .map(|port| {
+                let timeout = self.config.timeout;
+                async move {
+                    let is_open = Self::check_port(ip, port, timeout).await;
+                    (port, is_open)
+                }
+            })
+            .buffer_unordered(self.config.concurrency)
+            .collect()
+            .await;
+
+        for (port, is_open) in port_results {
+            if is_open {
+                open_ports.push(ScannedPort {
+                    port,
+                    open: true,
+                    service: Self::get_service_name(port),
+                });
+            }
+        }
+
+        let is_alive = !open_ports.is_empty();
+
+        // Hostname resolution would require additional dependencies
+        // For now, we'll leave it as None - can be enhanced later
+        let hostname = None;
+
+        ScannedHost {
+            ip_address: ip.to_string(),
+            open_ports,
+            is_alive,
+            hostname,
+        }
+    }
+
+    /// Scan a network range (CIDR notation)
+    pub async fn scan_network(&self, cidr: &str) -> Result<Vec<ScannedHost>, String> {
+        let ips = Self::parse_cidr(cidr)?;
+
+        tracing::info!("Starting TCP scan of {} hosts on ports {:?}", ips.len(), self.config.ports);
+
+        // Scan all hosts concurrently
+        let results: Vec<ScannedHost> = stream::iter(ips)
+            .map(|ip| self.scan_host(ip))
+            .buffer_unordered(self.config.concurrency)
+            .collect()
+            .await;
+
+        // Filter to only hosts that are alive (have at least one open port)
+        let alive_hosts: Vec<ScannedHost> = results
+            .into_iter()
+            .filter(|h| h.is_alive)
+            .collect();
+
+        tracing::info!("Scan complete. Found {} live hosts", alive_hosts.len());
+
+        Ok(alive_hosts)
+    }
+
+    /// Quick scan of a single IP address
+    pub async fn scan_single_host(&self, ip: &str) -> Result<ScannedHost, String> {
+        let ip_addr: Ipv4Addr = ip.parse()
+            .map_err(|_| format!("Invalid IP address: {}", ip))?;
+
+        Ok(self.scan_host(ip_addr).await)
+    }
+}
+
+impl Default for TcpScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Scan a network using the native TCP scanner
+/// This is a convenience function that creates a scanner with default settings
+pub async fn scan_network_native(cidr: &str) -> Result<Vec<ScannedHost>, String> {
+    let scanner = TcpScanner::new();
+    scanner.scan_network(cidr).await
+}
+
+/// Scan a network with custom ports
+pub async fn scan_network_with_ports(cidr: &str, ports: Vec<u16>) -> Result<Vec<ScannedHost>, String> {
+    let config = TcpScannerConfig {
+        ports,
+        ..Default::default()
+    };
+    let scanner = TcpScanner::with_config(config);
+    scanner.scan_network(cidr).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -606,5 +850,35 @@ mod tests {
         let result = validate_target("example.com").unwrap();
         assert!(result.valid);
         assert_eq!(result.target_type, Some("Hostname".to_string()));
+    }
+
+    #[test]
+    fn test_tcp_scanner_parse_cidr() {
+        let ips = TcpScanner::parse_cidr("192.168.1.0/30").unwrap();
+        assert_eq!(ips.len(), 4); // /30 = 4 hosts
+    }
+
+    #[test]
+    fn test_tcp_scanner_parse_cidr_too_large() {
+        let result = TcpScanner::parse_cidr("10.0.0.0/8");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too large"));
+    }
+
+    #[test]
+    fn test_tcp_scanner_service_names() {
+        assert_eq!(TcpScanner::get_service_name(22), "SSH");
+        assert_eq!(TcpScanner::get_service_name(80), "HTTP");
+        assert_eq!(TcpScanner::get_service_name(443), "HTTPS");
+        assert_eq!(TcpScanner::get_service_name(3389), "RDP");
+        assert_eq!(TcpScanner::get_service_name(99999), "port-99999");
+    }
+
+    #[test]
+    fn test_tcp_scanner_config_default() {
+        let config = TcpScannerConfig::default();
+        assert_eq!(config.timeout, std::time::Duration::from_secs(2));
+        assert_eq!(config.ports, vec![22, 80, 443, 3389]);
+        assert_eq!(config.concurrency, 100);
     }
 }

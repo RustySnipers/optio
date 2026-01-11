@@ -57,6 +57,12 @@ import type {
   ReportContent,
   ReportSummary,
   ReportStats,
+  // Task A & B types
+  GenerateAgentScriptRequest,
+  AgentScriptResponse,
+  ScanNetworkRequest,
+  ScanNetworkResponse,
+  ScannedHost,
 } from "@/types";
 
 // ============================================================================
@@ -93,6 +99,16 @@ export async function validateConfig(
   request: ValidateConfigRequest
 ): Promise<ValidationResult> {
   return invoke<ValidationResult>("validate_config", { request });
+}
+
+/**
+ * Generate an agent script with hardcoded connection parameters (Task A)
+ * Creates a PowerShell script for establishing reverse connections to Optio
+ */
+export async function generateAgentScript(
+  request: GenerateAgentScriptRequest
+): Promise<AgentScriptResponse> {
+  return invoke<AgentScriptResponse>("generate_agent_script", { request });
 }
 
 // ============================================================================
@@ -523,6 +539,45 @@ export async function addAssetToGroup(groupId: string, assetId: string): Promise
  */
 export async function removeAssetFromGroup(groupId: string, assetId: string): Promise<void> {
   return invoke<void>("remove_asset_from_group", { groupId, assetId });
+}
+
+// ============================================================================
+// Native TCP Scanner Commands (Task B)
+// ============================================================================
+
+/**
+ * Scan a network using the native Rust TCP scanner (Task B)
+ * This is a lightweight alternative to Nmap that uses async TCP connects
+ * to detect open ports on hosts within a CIDR range.
+ */
+export async function scanNetwork(
+  request: ScanNetworkRequest
+): Promise<ScanNetworkResponse> {
+  return invoke<ScanNetworkResponse>("scan_network", { request });
+}
+
+/**
+ * Quick scan of a single host
+ */
+export async function scanSingleHost(
+  ip: string,
+  ports?: number[]
+): Promise<ScannedHost> {
+  return invoke<ScannedHost>("scan_single_host", { ip, ports: ports ?? null });
+}
+
+/**
+ * Get the default ports used for scanning (22, 80, 443, 3389)
+ */
+export async function getDefaultScanPorts(): Promise<number[]> {
+  return invoke<number[]>("get_default_scan_ports");
+}
+
+/**
+ * Get the extended ports list for thorough scanning (24 common ports)
+ */
+export async function getExtendedScanPorts(): Promise<number[]> {
+  return invoke<number[]>("get_extended_scan_ports");
 }
 
 // ============================================================================

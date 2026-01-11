@@ -6,7 +6,9 @@ use crate::network::{
     models::*,
     scanner::{
         check_nmap_installed, get_scan_types, build_nmap_command, validate_target,
-        get_common_ports, NmapInfo, ScanTypeInfo, TargetValidation, CommonPort,
+        get_common_ports, scan_network_native, scan_network_with_ports,
+        NmapInfo, ScanTypeInfo, TargetValidation, CommonPort, ScannedHost,
+        DEFAULT_SCAN_PORTS, EXTENDED_SCAN_PORTS,
     },
     inventory::{generate_demo_assets, AssetInventory},
 };
@@ -168,6 +170,130 @@ pub async fn delete_scan(
     let len_before = scans.len();
     scans.retain(|s| s.id != scan_id);
     Ok(scans.len() < len_before)
+}
+
+// ============================================================================
+// Native TCP Scanner Commands (Task B - Core Mechanics)
+// ============================================================================
+
+/// Request for native network scan
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanNetworkRequest {
+    /// CIDR notation target (e.g., "192.168.1.0/24")
+    pub cidr: String,
+    /// Optional custom ports to scan (defaults to 22, 80, 443, 3389)
+    pub ports: Option<Vec<u16>>,
+    /// Use extended port list (24 common ports)
+    pub extended: Option<bool>,
+}
+
+/// Response from native network scan
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanNetworkResponse {
+    /// Whether scan was successful
+    pub success: bool,
+    /// Discovered hosts with open ports
+    pub hosts: Vec<ScannedHost>,
+    /// Total hosts scanned
+    pub hosts_scanned: usize,
+    /// Number of live hosts (with open ports)
+    pub hosts_alive: usize,
+    /// Ports that were scanned
+    pub ports_scanned: Vec<u16>,
+    /// Scan duration in milliseconds
+    pub duration_ms: u64,
+}
+
+/// Scan a network using the native Rust TCP scanner
+///
+/// This is a lightweight alternative to Nmap that uses async TCP connects
+/// to detect open ports on hosts within a CIDR range.
+///
+/// Default ports: 22 (SSH), 80 (HTTP), 443 (HTTPS), 3389 (RDP)
+/// Extended ports: 24 common service ports
+#[tauri::command]
+pub async fn scan_network(
+    request: ScanNetworkRequest,
+) -> Result<ScanNetworkResponse, String> {
+    tracing::info!("Starting native TCP scan of: {}", request.cidr);
+
+    let start = std::time::Instant::now();
+
+    // Determine which ports to scan
+    let ports = if let Some(custom_ports) = request.ports {
+        custom_ports
+    } else if request.extended.unwrap_or(false) {
+        EXTENDED_SCAN_PORTS.to_vec()
+    } else {
+        DEFAULT_SCAN_PORTS.to_vec()
+    };
+
+    // Perform the scan
+    let hosts = scan_network_with_ports(&request.cidr, ports.clone()).await?;
+
+    let duration = start.elapsed();
+
+    // Calculate statistics
+    // For hosts_scanned, we need to parse the CIDR to get the count
+    let hosts_scanned = estimate_host_count(&request.cidr).unwrap_or(0);
+    let hosts_alive = hosts.len();
+
+    tracing::info!(
+        "Scan complete: {} live hosts found out of ~{} in {} ms",
+        hosts_alive,
+        hosts_scanned,
+        duration.as_millis()
+    );
+
+    Ok(ScanNetworkResponse {
+        success: true,
+        hosts,
+        hosts_scanned,
+        hosts_alive,
+        ports_scanned: ports,
+        duration_ms: duration.as_millis() as u64,
+    })
+}
+
+/// Quick scan of a single host
+#[tauri::command]
+pub async fn scan_single_host(
+    ip: String,
+    ports: Option<Vec<u16>>,
+) -> Result<ScannedHost, String> {
+    tracing::info!("Scanning single host: {}", ip);
+
+    let ports = ports.unwrap_or_else(|| DEFAULT_SCAN_PORTS.to_vec());
+
+    let config = crate::network::scanner::TcpScannerConfig {
+        ports,
+        ..Default::default()
+    };
+
+    let scanner = crate::network::scanner::TcpScanner::with_config(config);
+    scanner.scan_single_host(&ip).await
+}
+
+/// Get the default ports used for scanning
+#[tauri::command]
+pub async fn get_default_scan_ports() -> Result<Vec<u16>, String> {
+    Ok(DEFAULT_SCAN_PORTS.to_vec())
+}
+
+/// Get the extended ports list for thorough scanning
+#[tauri::command]
+pub async fn get_extended_scan_ports() -> Result<Vec<u16>, String> {
+    Ok(EXTENDED_SCAN_PORTS.to_vec())
+}
+
+/// Estimate the number of hosts in a CIDR range
+fn estimate_host_count(cidr: &str) -> Option<usize> {
+    use std::str::FromStr;
+    ipnetwork::IpNetwork::from_str(cidr)
+        .ok()
+        .map(|net| net.size() as usize)
 }
 
 // ============================================================================

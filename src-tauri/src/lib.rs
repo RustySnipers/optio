@@ -57,6 +57,7 @@ pub fn run() {
             commands::factory::list_templates,
             commands::factory::get_script_preview,
             commands::factory::validate_config,
+            commands::factory::generate_agent_script,
             // Client management commands
             commands::clients::create_client,
             commands::clients::list_clients,
@@ -104,6 +105,11 @@ pub fn run() {
             commands::network::list_scans,
             commands::network::get_scan,
             commands::network::delete_scan,
+            // Native TCP Scanner commands
+            commands::network::scan_network,
+            commands::network::scan_single_host,
+            commands::network::get_default_scan_ports,
+            commands::network::get_extended_scan_ports,
             commands::network::list_assets,
             commands::network::get_demo_assets,
             commands::network::get_asset,

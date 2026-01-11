@@ -4,7 +4,7 @@
 //! Manufactures unique, state-aware scripts for each engagement.
 
 use crate::error::{OptioError, OptioResult};
-use crate::factory::{ScriptConfig, ScriptGenerator, TemplateInfo};
+use crate::factory::{ScriptConfig, ScriptGenerator, TemplateInfo, AgentScriptConfig, generate_agent_script as factory_generate_agent};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
@@ -317,5 +317,75 @@ fn is_valid_ip(ip: &str) -> bool {
 
     octets.iter().all(|octet| {
         octet.parse::<u8>().is_ok()
+    })
+}
+
+// ============================================================================
+// Agent Script Generation (Task A - Core Mechanics)
+// ============================================================================
+
+/// Request payload for agent script generation
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateAgentScriptRequest {
+    /// IP address of the Optio server (callback target)
+    pub client_ip: String,
+    /// Authentication token for secure communication
+    pub auth_token: String,
+    /// Callback port (default: 443)
+    pub callback_port: Option<u16>,
+    /// Enable TLS for callback connection
+    pub use_tls: Option<bool>,
+    /// Heartbeat interval in seconds
+    pub heartbeat_interval: Option<u32>,
+}
+
+/// Response from agent script generation
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentScriptResponse {
+    /// Whether generation was successful
+    pub success: bool,
+    /// The generated script content
+    pub script_content: String,
+    /// Unique script identifier
+    pub script_id: String,
+    /// Generation timestamp
+    pub generated_at: String,
+    /// Warnings or notes
+    pub warnings: Vec<String>,
+}
+
+/// Generate an agent script with hardcoded connection parameters for reverse callback
+///
+/// This creates a PowerShell script that will establish a connection back to Optio
+/// with the specified IP and authentication token hardcoded into the script.
+#[tauri::command]
+pub async fn generate_agent_script(
+    request: GenerateAgentScriptRequest,
+) -> Result<AgentScriptResponse, String> {
+    tracing::info!(
+        "Generating agent script for callback to: {}",
+        request.client_ip
+    );
+
+    let config = AgentScriptConfig {
+        client_ip: request.client_ip,
+        auth_token: request.auth_token,
+        callback_port: request.callback_port.unwrap_or(443),
+        use_tls: request.use_tls.unwrap_or(true),
+        heartbeat_interval: request.heartbeat_interval.unwrap_or(30),
+    };
+
+    let result = factory_generate_agent(&config).map_err(|e| e.to_string())?;
+
+    tracing::info!("Agent script generated: {}", result.script_id);
+
+    Ok(AgentScriptResponse {
+        success: true,
+        script_content: result.content,
+        script_id: result.script_id,
+        generated_at: result.generated_at.to_rfc3339(),
+        warnings: result.warnings,
     })
 }
