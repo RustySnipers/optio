@@ -59,3 +59,7 @@
 - **Heartbeats:** Must be compressed JSON.
 - **Factory:** Generated scripts must be **idempotent** (can run multiple times without side effects).
 - **Identity Injection:** The Factory injects the Consultant's IP/Cert into the Agent at build time.
+
+## 7. External References
+- **NotebookLM (Design & Strategy):** [Optio Notebook](https://notebooklm.google.com/notebook/7cd21da8-1d69-4f66-90ac-fe6d4bda1458)
+  *Note: Content from this notebook should be exported to `docs/notebooklm_context.md` for local access.*
