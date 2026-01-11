@@ -83,6 +83,7 @@ pub fn run() {
             commands::grc::get_assessment_evidence,
             commands::grc::delete_evidence,
             commands::grc::get_assessment_summary,
+            commands::grc::get_compliance_status,
             // Infrastructure commands
             commands::infrastructure::get_cloud_readiness_items,
             commands::infrastructure::get_cloud_readiness_by_category,
@@ -135,6 +136,10 @@ pub fn run() {
             commands::reporting::delete_report,
             commands::reporting::get_report_stats,
             commands::reporting::generate_demo_reports,
+            // PDF generation commands
+            commands::reporting::generate_executive_pdf,
+            commands::reporting::generate_demo_pdf,
+            commands::reporting::open_pdf_location,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

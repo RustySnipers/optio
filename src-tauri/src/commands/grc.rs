@@ -5,11 +5,12 @@
 use crate::db::Database;
 use crate::grc::{
     models::*,
-    frameworks::{get_framework_controls, get_available_frameworks, FrameworkInfo},
+    frameworks::{get_framework_controls, get_available_frameworks, get_framework_categories, FrameworkInfo, CategoryInfo},
     repository::{AssessmentRepository, ControlAssessmentRepository, EvidenceRepository},
 };
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tauri::State;
 use uuid::Uuid;
 
@@ -428,6 +429,165 @@ pub async fn get_assessment_summary(
         category_scores,
         high_risk_gaps,
         evidence_count,
+    })
+}
+
+// ============================================================================
+// Compliance Status Command (Task A)
+// ============================================================================
+
+/// Get compliance status for a specific framework
+/// Returns the overall completion and compliance percentages for all NIST CSF categories
+#[tauri::command]
+pub async fn get_compliance_status(
+    db: State<'_, Database>,
+    framework: String,
+    client_id: Option<String>,
+) -> Result<ComplianceStatusReport, String> {
+    let fw = parse_framework_param(&framework)?;
+    let controls = get_framework_controls(fw);
+    let categories = get_framework_categories(fw);
+
+    // Get all assessments for this framework
+    let assessment_repo = AssessmentRepository::new(&db);
+    let control_repo = ControlAssessmentRepository::new(&db);
+
+    let assessments = if let Some(ref cid) = client_id {
+        assessment_repo.list_by_client(cid).map_err(|e| e.to_string())?
+    } else {
+        assessment_repo.list_all().map_err(|e| e.to_string())?
+    };
+
+    // Filter to only this framework
+    let framework_assessments: Vec<_> = assessments
+        .into_iter()
+        .filter(|a| a.framework == fw)
+        .collect();
+
+    // Collect all control assessments across all assessments
+    let mut all_control_assessments: HashMap<String, ControlAssessment> = HashMap::new();
+    for assessment in &framework_assessments {
+        let cas = control_repo.get_by_assessment(&assessment.id).map_err(|e| e.to_string())?;
+        for ca in cas {
+            // Keep the most recent assessment for each control
+            all_control_assessments.insert(ca.control_id.clone(), ca);
+        }
+    }
+
+    // Calculate overall stats
+    let mut total_assessed = 0;
+    let mut total_compliant = 0;
+    let mut total_partial = 0;
+    let mut total_non_compliant = 0;
+    let mut total_na = 0;
+
+    // Build category breakdown
+    let mut category_map: HashMap<String, (usize, usize, usize, usize, usize, usize)> = HashMap::new();
+
+    for control in &controls {
+        let status = all_control_assessments
+            .get(&control.id)
+            .map(|ca| ca.status)
+            .unwrap_or(ComplianceStatus::NotAssessed);
+
+        let entry = category_map.entry(control.category.clone()).or_insert((0, 0, 0, 0, 0, 0));
+        entry.0 += 1; // total
+
+        match status {
+            ComplianceStatus::NotAssessed => {
+                // Not assessed - counts towards total but not assessed count
+            }
+            ComplianceStatus::Compliant => {
+                total_assessed += 1;
+                total_compliant += 1;
+                entry.1 += 1; // assessed
+                entry.2 += 1; // compliant
+            }
+            ComplianceStatus::PartiallyCompliant => {
+                total_assessed += 1;
+                total_partial += 1;
+                entry.1 += 1;
+                entry.3 += 1; // partial
+            }
+            ComplianceStatus::NonCompliant => {
+                total_assessed += 1;
+                total_non_compliant += 1;
+                entry.1 += 1;
+                entry.4 += 1; // non-compliant
+            }
+            ComplianceStatus::NotApplicable => {
+                total_assessed += 1;
+                total_na += 1;
+                entry.1 += 1;
+                entry.5 += 1; // n/a
+            }
+        }
+    }
+
+    // Build category breakdown response
+    let category_breakdown: Vec<CategoryComplianceStatus> = categories
+        .iter()
+        .map(|cat| {
+            let stats = category_map.get(&cat.code).copied().unwrap_or((0, 0, 0, 0, 0, 0));
+            let (total, assessed, compliant, partial, non_comp, na) = stats;
+
+            let completion_pct = if total > 0 {
+                (assessed as f64 / total as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            let applicable = assessed - na;
+            let compliance_pct = if applicable > 0 {
+                ((compliant as f64 + partial as f64 * 0.5) / applicable as f64) * 100.0
+            } else {
+                0.0
+            };
+
+            CategoryComplianceStatus {
+                code: cat.code.clone(),
+                name: cat.name.clone(),
+                description: cat.description.clone(),
+                color: cat.color.clone(),
+                total_controls: total,
+                assessed_controls: assessed,
+                compliant,
+                partially_compliant: partial,
+                non_compliant: non_comp,
+                completion_percentage: (completion_pct * 10.0).round() / 10.0,
+                compliance_percentage: (compliance_pct * 10.0).round() / 10.0,
+            }
+        })
+        .collect();
+
+    let total_controls = controls.len();
+    let completion_percentage = if total_controls > 0 {
+        (total_assessed as f64 / total_controls as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    let applicable = total_assessed - total_na;
+    let compliance_percentage = if applicable > 0 {
+        ((total_compliant as f64 + total_partial as f64 * 0.5) / applicable as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(ComplianceStatusReport {
+        framework: fw,
+        completion_percentage: (completion_percentage * 10.0).round() / 10.0,
+        compliance_percentage: (compliance_percentage * 10.0).round() / 10.0,
+        total_controls,
+        assessed_controls: total_assessed,
+        compliant_controls: total_compliant,
+        partially_compliant_controls: total_partial,
+        non_compliant_controls: total_non_compliant,
+        not_applicable_controls: total_na,
+        category_breakdown,
+        network_health_score: None,
+        total_assets: None,
+        last_updated: Utc::now().to_rfc3339(),
     })
 }
 

@@ -499,3 +499,117 @@ pub struct AssessmentSummary {
     /// Evidence count
     pub evidence_count: usize,
 }
+
+/// Compliance status for a framework (aggregate across all client assessments)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComplianceStatusReport {
+    /// Framework being reported on
+    pub framework: Framework,
+    /// Overall completion percentage (how many controls have been assessed)
+    pub completion_percentage: f64,
+    /// Overall compliance percentage (of assessed controls)
+    pub compliance_percentage: f64,
+    /// Total controls in the framework
+    pub total_controls: usize,
+    /// Controls that have been assessed
+    pub assessed_controls: usize,
+    /// Compliant controls
+    pub compliant_controls: usize,
+    /// Partially compliant controls
+    pub partially_compliant_controls: usize,
+    /// Non-compliant controls
+    pub non_compliant_controls: usize,
+    /// Not applicable controls
+    pub not_applicable_controls: usize,
+    /// Breakdown by category (NIST functions, SOC2 categories, etc.)
+    pub category_breakdown: Vec<CategoryComplianceStatus>,
+    /// Network health score (if available)
+    pub network_health_score: Option<f64>,
+    /// Total assets discovered
+    pub total_assets: Option<usize>,
+    /// Last updated timestamp
+    pub last_updated: String,
+}
+
+/// Compliance status for a single category/function
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryComplianceStatus {
+    /// Category code (GV, ID, PR, DE, RS, RC for NIST)
+    pub code: String,
+    /// Category display name
+    pub name: String,
+    /// Description of the category
+    pub description: String,
+    /// Color for visualization
+    pub color: String,
+    /// Total controls in this category
+    pub total_controls: usize,
+    /// Assessed controls in this category
+    pub assessed_controls: usize,
+    /// Compliant controls
+    pub compliant: usize,
+    /// Partially compliant
+    pub partially_compliant: usize,
+    /// Non-compliant
+    pub non_compliant: usize,
+    /// Completion percentage
+    pub completion_percentage: f64,
+    /// Compliance percentage
+    pub compliance_percentage: f64,
+}
+
+/// Data for generating an executive report
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutiveReportData {
+    /// Client name
+    pub client_name: String,
+    /// Report title
+    pub title: String,
+    /// Report date
+    pub report_date: String,
+    /// Compliance status from GRC
+    pub compliance_status: Option<ComplianceStatusReport>,
+    /// Network health score (0-100)
+    pub network_health_score: f64,
+    /// Total assets discovered
+    pub total_assets: usize,
+    /// Assets by category
+    pub assets_by_category: Vec<AssetCategoryCount>,
+    /// Top findings/recommendations
+    pub top_findings: Vec<ExecutiveFinding>,
+    /// Risk summary
+    pub risk_summary: RiskSummary,
+}
+
+/// Asset count by category for reports
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetCategoryCount {
+    pub category: String,
+    pub count: usize,
+}
+
+/// A finding for executive reports
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecutiveFinding {
+    pub id: String,
+    pub title: String,
+    pub severity: String,
+    pub description: String,
+    pub recommendation: String,
+}
+
+/// Risk summary for executive reports
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RiskSummary {
+    pub critical_count: usize,
+    pub high_count: usize,
+    pub medium_count: usize,
+    pub low_count: usize,
+    pub overall_risk_rating: String,
+}
