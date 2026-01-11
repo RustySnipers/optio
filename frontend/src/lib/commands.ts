@@ -49,6 +49,14 @@ import type {
   UpdateAssetRequest,
   CreateGroupRequest,
   NetworkStats,
+  ReportTemplate,
+  ReportTypeInfo,
+  ExportFormatInfo,
+  GenerateReportRequest,
+  Report,
+  ReportContent,
+  ReportSummary,
+  ReportStats,
 } from "@/types";
 
 // ============================================================================
@@ -515,4 +523,109 @@ export async function addAssetToGroup(groupId: string, assetId: string): Promise
  */
 export async function removeAssetFromGroup(groupId: string, assetId: string): Promise<void> {
   return invoke<void>("remove_asset_from_group", { groupId, assetId });
+}
+
+// ============================================================================
+// Reporting Commands
+// ============================================================================
+
+/**
+ * Get all available report templates
+ */
+export async function getReportTemplateList(): Promise<ReportTemplate[]> {
+  return invoke<ReportTemplate[]>("get_report_template_list");
+}
+
+/**
+ * Get template for a specific report type
+ */
+export async function getTemplateByType(reportType: string): Promise<ReportTemplate> {
+  return invoke<ReportTemplate>("get_template_by_type", { reportType });
+}
+
+/**
+ * Get all report type options
+ */
+export async function getReportTypes(): Promise<ReportTypeInfo[]> {
+  return invoke<ReportTypeInfo[]>("get_report_types");
+}
+
+/**
+ * Get all export format options
+ */
+export async function getExportFormatList(): Promise<ExportFormatInfo[]> {
+  return invoke<ExportFormatInfo[]>("get_export_format_list");
+}
+
+/**
+ * Generate a new report
+ */
+export async function generateReport(request: GenerateReportRequest): Promise<Report> {
+  return invoke<Report>("generate_report", { request });
+}
+
+/**
+ * Preview report content without saving
+ */
+export async function previewReport(request: GenerateReportRequest): Promise<ReportContent> {
+  return invoke<ReportContent>("preview_report", { request });
+}
+
+/**
+ * Export report to HTML
+ */
+export async function exportReportHtml(reportId: string): Promise<string> {
+  return invoke<string>("export_report_html", { reportId });
+}
+
+/**
+ * Export report to Markdown
+ */
+export async function exportReportMarkdown(reportId: string): Promise<string> {
+  return invoke<string>("export_report_markdown", { reportId });
+}
+
+/**
+ * Export report to JSON
+ */
+export async function exportReportJson(reportId: string): Promise<string> {
+  return invoke<string>("export_report_json", { reportId });
+}
+
+/**
+ * List all reports
+ */
+export async function listReports(clientId?: string): Promise<ReportSummary[]> {
+  return invoke<ReportSummary[]>("list_reports", { clientId: clientId ?? null });
+}
+
+/**
+ * Get a specific report by ID
+ */
+export async function getReport(reportId: string): Promise<Report | null> {
+  return invoke<Report | null>("get_report", { reportId });
+}
+
+/**
+ * Delete a report
+ */
+export async function deleteReport(reportId: string): Promise<boolean> {
+  return invoke<boolean>("delete_report", { reportId });
+}
+
+/**
+ * Get report statistics
+ */
+export async function getReportStats(clientId?: string): Promise<ReportStats> {
+  return invoke<ReportStats>("get_report_stats", { clientId: clientId ?? null });
+}
+
+/**
+ * Generate demo reports for development
+ */
+export async function generateDemoReports(
+  clientId: string,
+  clientName: string
+): Promise<ReportSummary[]> {
+  return invoke<ReportSummary[]>("generate_demo_reports", { clientId, clientName });
 }

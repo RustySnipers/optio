@@ -9,6 +9,7 @@ import {
   Network,
   Settings,
   Box,
+  FileText,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -59,6 +60,12 @@ const navItems: NavItem[] = [
     label: "Network Intel",
     icon: Network,
     description: "Discovery & scanning",
+  },
+  {
+    id: "reporting",
+    label: "Reporting",
+    icon: FileText,
+    description: "Generate reports",
   },
 ];
 

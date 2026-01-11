@@ -8,6 +8,7 @@ pub mod factory;
 pub mod grc;
 pub mod infrastructure;
 pub mod network;
+pub mod reporting;
 pub mod error;
 pub mod db;
 
@@ -32,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(commands::network::NetworkState::default())
+        .manage(commands::reporting::ReportingState::default())
         .setup(|app| {
             // Initialize the database on startup
             let app_handle = app.handle().clone();
@@ -112,6 +114,21 @@ pub fn run() {
             commands::network::list_asset_groups,
             commands::network::add_asset_to_group,
             commands::network::remove_asset_from_group,
+            // Reporting commands
+            commands::reporting::get_report_template_list,
+            commands::reporting::get_template_by_type,
+            commands::reporting::get_report_types,
+            commands::reporting::get_export_format_list,
+            commands::reporting::generate_report,
+            commands::reporting::preview_report,
+            commands::reporting::export_report_html,
+            commands::reporting::export_report_markdown,
+            commands::reporting::export_report_json,
+            commands::reporting::list_reports,
+            commands::reporting::get_report,
+            commands::reporting::delete_report,
+            commands::reporting::get_report_stats,
+            commands::reporting::generate_demo_reports,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
