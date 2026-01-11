@@ -63,6 +63,10 @@ import type {
   ScanNetworkRequest,
   ScanNetworkResponse,
   ScannedHost,
+  // Phase 3 types
+  ComplianceStatusReport,
+  GenerateExecutivePdfRequest,
+  PdfGenerationResult,
 } from "@/types";
 
 // ============================================================================
@@ -683,4 +687,51 @@ export async function generateDemoReports(
   clientName: string
 ): Promise<ReportSummary[]> {
   return invoke<ReportSummary[]>("generate_demo_reports", { clientId, clientName });
+}
+
+// ============================================================================
+// GRC Compliance Status Commands (Phase 3)
+// ============================================================================
+
+/**
+ * Get compliance status for a specific framework
+ * Returns overall completion and compliance percentages for all categories
+ */
+export async function getComplianceStatus(
+  framework: string,
+  clientId?: string
+): Promise<ComplianceStatusReport> {
+  return invoke<ComplianceStatusReport>("get_compliance_status", {
+    framework,
+    clientId: clientId ?? null,
+  });
+}
+
+// ============================================================================
+// PDF Generation Commands (Phase 3)
+// ============================================================================
+
+/**
+ * Generate an executive summary PDF with GRC and Network data
+ */
+export async function generateExecutivePdf(
+  request: GenerateExecutivePdfRequest
+): Promise<PdfGenerationResult> {
+  return invoke<PdfGenerationResult>("generate_executive_pdf", { request });
+}
+
+/**
+ * Generate a demo executive PDF for testing
+ */
+export async function generateDemoPdf(
+  clientName: string
+): Promise<PdfGenerationResult> {
+  return invoke<PdfGenerationResult>("generate_demo_pdf", { clientName });
+}
+
+/**
+ * Open the folder containing the generated PDF
+ */
+export async function openPdfLocation(filePath: string): Promise<boolean> {
+  return invoke<boolean>("open_pdf_location", { filePath });
 }

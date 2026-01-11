@@ -28,6 +28,8 @@ import {
   BookOpen,
   Loader2,
   ChevronRight,
+  FolderOpen,
+  FileOutput,
 } from "lucide-react";
 import {
   getReportTypes,
@@ -37,6 +39,9 @@ import {
   exportReportHtml,
   exportReportMarkdown,
   exportReportJson,
+  generateExecutivePdf,
+  generateDemoPdf,
+  openPdfLocation,
 } from "@/lib/commands";
 import type {
   ReportTypeInfo,
@@ -46,6 +51,7 @@ import type {
   ReportType,
   ReportStatus,
   ExportFormat,
+  PdfGenerationResult,
 } from "@/types";
 
 // Report type icons mapping
@@ -77,7 +83,7 @@ function formatFileSize(bytes: number | null): string {
 }
 
 export function ReportingCenter() {
-  const [activeTab, setActiveTab] = useState<"reports" | "generate">("reports");
+  const [activeTab, setActiveTab] = useState<"reports" | "generate" | "pdf">("reports");
   const [reportTypes, setReportTypes] = useState<ReportTypeInfo[]>([]);
   const [exportFormats, setExportFormats] = useState<ExportFormatInfo[]>([]);
   const [reports, setReports] = useState<ReportSummary[]>([]);
@@ -99,6 +105,10 @@ export function ReportingCenter() {
     includeAppendices: true,
     includeCharts: true,
   });
+
+  // PDF generation state
+  const [pdfResult, setPdfResult] = useState<PdfGenerationResult | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -178,6 +188,52 @@ export function ReportingCenter() {
     }
   };
 
+  const handleGenerateExecutivePdf = async () => {
+    setIsGeneratingPdf(true);
+    setPdfResult(null);
+    try {
+      const result = await generateExecutivePdf({
+        clientId: formData.clientId,
+        clientName: formData.clientName || "Demo Client",
+        title: formData.title || "Executive Security Assessment",
+        framework: "NIST_CSF_2",
+        includeNetworkData: true,
+        includeComplianceData: true,
+      });
+      setPdfResult(result);
+    } catch (error) {
+      console.error("Failed to generate PDF:", error);
+      alert(`Failed to generate PDF: ${error}`);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleGenerateDemoPdf = async () => {
+    setIsGeneratingPdf(true);
+    setPdfResult(null);
+    try {
+      const result = await generateDemoPdf(formData.clientName || "Demo Client");
+      setPdfResult(result);
+    } catch (error) {
+      console.error("Failed to generate demo PDF:", error);
+      alert(`Failed to generate demo PDF: ${error}`);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
+  const handleOpenPdfLocation = async () => {
+    if (pdfResult?.filePath) {
+      try {
+        await openPdfLocation(pdfResult.filePath);
+      } catch (error) {
+        console.error("Failed to open PDF location:", error);
+        alert(`Failed to open folder: ${error}`);
+      }
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -242,6 +298,17 @@ export function ReportingCenter() {
             }`}
           >
             Generate New
+          </button>
+          <button
+            onClick={() => setActiveTab("pdf")}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
+              activeTab === "pdf"
+                ? "bg-red-600 text-white"
+                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+            }`}
+          >
+            <FileOutput className="w-4 h-4" />
+            Executive PDF
           </button>
         </div>
       </div>
@@ -410,7 +477,7 @@ export function ReportingCenter() {
               </table>
             </div>
           </div>
-        ) : (
+        ) : activeTab === "generate" ? (
           <div className="max-w-4xl mx-auto space-y-6">
             {/* Report Type Selection */}
             <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
@@ -646,7 +713,175 @@ export function ReportingCenter() {
               </button>
             </div>
           </div>
-        )}
+        ) : activeTab === "pdf" ? (
+          /* PDF Generation Tab */
+          <div className="max-w-4xl mx-auto space-y-6">
+            {/* PDF Generation Header */}
+            <div className="bg-gradient-to-r from-red-900/30 to-orange-900/30 rounded-xl border border-red-800/50 p-6">
+              <div className="flex items-start gap-4">
+                <div className="p-3 bg-red-500/20 rounded-xl">
+                  <FileOutput className="w-8 h-8 text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-white">Executive PDF Report Generator</h2>
+                  <p className="text-slate-300 mt-1">
+                    Generate professional PDF reports with integrated GRC compliance status,
+                    network health scores, and executive summaries.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* PDF Configuration */}
+            <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
+              <h3 className="text-lg font-semibold text-white mb-4">Report Configuration</h3>
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Client Name
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.clientName}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, clientName: e.target.value }))
+                    }
+                    placeholder="Acme Corporation"
+                    className="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Report Title
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
+                    placeholder="Executive Security Assessment"
+                    className="w-full px-4 py-2.5 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  />
+                </div>
+              </div>
+
+              {/* Report Contents */}
+              <div className="mt-6">
+                <h4 className="text-sm font-medium text-slate-300 mb-3">Report Contents</h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg">
+                    <Shield className="w-5 h-5 text-purple-400" />
+                    <span className="text-white">NIST CSF Compliance Status</span>
+                    <CheckCircle className="w-4 h-4 text-emerald-400 ml-auto" />
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg">
+                    <Network className="w-5 h-5 text-blue-400" />
+                    <span className="text-white">Network Health Score</span>
+                    <CheckCircle className="w-4 h-4 text-emerald-400 ml-auto" />
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg">
+                    <BarChart3 className="w-5 h-5 text-amber-400" />
+                    <span className="text-white">Asset Inventory Summary</span>
+                    <CheckCircle className="w-4 h-4 text-emerald-400 ml-auto" />
+                  </div>
+                  <div className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg">
+                    <AlertTriangle className="w-5 h-5 text-red-400" />
+                    <span className="text-white">Risk Summary & Findings</span>
+                    <CheckCircle className="w-4 h-4 text-emerald-400 ml-auto" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Generate Buttons */}
+            <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-white">Generate PDF</h3>
+                  <p className="text-sm text-slate-400 mt-1">
+                    Creates a 5-page executive summary with all data integrated
+                  </p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleGenerateDemoPdf}
+                    disabled={isGeneratingPdf}
+                    className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded-lg font-medium flex items-center gap-2 transition-colors"
+                  >
+                    {isGeneratingPdf ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <FileText className="w-5 h-5" />
+                    )}
+                    Demo Report
+                  </button>
+                  <button
+                    onClick={handleGenerateExecutivePdf}
+                    disabled={isGeneratingPdf}
+                    className="px-5 py-2.5 bg-red-600 hover:bg-red-500 disabled:bg-slate-600 text-white rounded-lg font-medium flex items-center gap-2 transition-colors"
+                  >
+                    {isGeneratingPdf ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <FileOutput className="w-5 h-5" />
+                        Generate Executive PDF
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* PDF Result */}
+            {pdfResult && (
+              <div className="bg-emerald-900/30 rounded-xl border border-emerald-700/50 p-6">
+                <div className="flex items-start gap-4">
+                  <div className="p-3 bg-emerald-500/20 rounded-xl">
+                    <CheckCircle className="w-8 h-8 text-emerald-400" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-white">PDF Generated Successfully!</h3>
+                    <p className="text-slate-300 mt-1">{pdfResult.message}</p>
+                    <div className="mt-4 grid grid-cols-3 gap-4">
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">File Size</p>
+                        <p className="text-lg font-semibold text-white">
+                          {formatFileSize(pdfResult.fileSize)}
+                        </p>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">Pages</p>
+                        <p className="text-lg font-semibold text-white">{pdfResult.pageCount}</p>
+                      </div>
+                      <div className="bg-slate-800/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">Format</p>
+                        <p className="text-lg font-semibold text-white">PDF</p>
+                      </div>
+                    </div>
+                    <div className="mt-4 p-3 bg-slate-800/50 rounded-lg">
+                      <p className="text-xs text-slate-400 mb-1">File Location</p>
+                      <p className="text-sm text-slate-300 font-mono break-all">
+                        {pdfResult.filePath}
+                      </p>
+                    </div>
+                    <div className="mt-4">
+                      <button
+                        onClick={handleOpenPdfLocation}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium flex items-center gap-2 transition-colors"
+                      >
+                        <FolderOpen className="w-5 h-5" />
+                        Open File Location
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* Export Preview Modal */}

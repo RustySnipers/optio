@@ -49,7 +49,8 @@ pub struct CategoryInfo {
     pub color: String,
 }
 
-fn get_framework_categories(framework: Framework) -> Vec<CategoryInfo> {
+/// Get all categories for a specific framework
+pub fn get_framework_categories(framework: Framework) -> Vec<CategoryInfo> {
     match framework {
         Framework::NistCsf2 => NistFunction::all()
             .into_iter()

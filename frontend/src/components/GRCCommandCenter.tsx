@@ -8,6 +8,7 @@ import {
   updateControlAssessment,
   getControlAssessments,
   listClients,
+  getComplianceStatus,
 } from "@/lib/commands";
 import type {
   FrameworkInfo,
@@ -17,6 +18,7 @@ import type {
   ControlAssessment,
   Client,
   ComplianceStatus,
+  ComplianceStatusReport,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import {
@@ -34,6 +36,8 @@ import {
   Filter,
   Search,
   RefreshCw,
+  TrendingUp,
+  Activity,
 } from "lucide-react";
 
 type ViewMode = "heatmap" | "list";
@@ -53,6 +57,7 @@ export function GRCCommandCenter() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [isLoading, setIsLoading] = useState(true);
   const [showNewAssessmentModal, setShowNewAssessmentModal] = useState(false);
+  const [complianceStatusReport, setComplianceStatusReport] = useState<ComplianceStatusReport | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -79,12 +84,16 @@ export function GRCCommandCenter() {
     loadData();
   }, []);
 
-  // Load controls when framework changes
+  // Load controls and compliance status when framework changes
   useEffect(() => {
     async function loadControls() {
       try {
-        const controlData = await getFrameworkControls(selectedFramework);
+        const [controlData, statusReport] = await Promise.all([
+          getFrameworkControls(selectedFramework),
+          getComplianceStatus(selectedFramework).catch(() => null),
+        ]);
         setControls(controlData);
+        setComplianceStatusReport(statusReport);
       } catch (error) {
         console.error("Failed to load controls:", error);
       }
@@ -225,6 +234,68 @@ export function GRCCommandCenter() {
             ))}
           </div>
         </div>
+
+        {/* Compliance Status Overview */}
+        {complianceStatusReport && (
+          <div className="mt-4 grid grid-cols-5 gap-4">
+            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+              <div className="flex items-center gap-2 mb-2">
+                <TrendingUp className="w-4 h-4 text-blue-400" />
+                <span className="text-xs text-slate-400">Completion</span>
+              </div>
+              <div className="text-2xl font-bold text-white">
+                {complianceStatusReport.completionPercentage.toFixed(1)}%
+              </div>
+              <div className="text-xs text-slate-500 mt-1">
+                {complianceStatusReport.assessedControls}/{complianceStatusReport.totalControls} controls
+              </div>
+            </div>
+            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+              <div className="flex items-center gap-2 mb-2">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                <span className="text-xs text-slate-400">Compliance</span>
+              </div>
+              <div className={cn(
+                "text-2xl font-bold",
+                complianceStatusReport.compliancePercentage >= 80 ? "text-emerald-400" :
+                complianceStatusReport.compliancePercentage >= 50 ? "text-amber-400" : "text-red-400"
+              )}>
+                {complianceStatusReport.compliancePercentage.toFixed(1)}%
+              </div>
+              <div className="text-xs text-slate-500 mt-1">Overall score</div>
+            </div>
+            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2 className="w-4 h-4 text-secure" />
+                <span className="text-xs text-slate-400">Compliant</span>
+              </div>
+              <div className="text-2xl font-bold text-secure">
+                {complianceStatusReport.compliantControls}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">controls</div>
+            </div>
+            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-4 h-4 text-warning" />
+                <span className="text-xs text-slate-400">Partial</span>
+              </div>
+              <div className="text-2xl font-bold text-warning">
+                {complianceStatusReport.partiallyCompliantControls}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">controls</div>
+            </div>
+            <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
+              <div className="flex items-center gap-2 mb-2">
+                <XCircle className="w-4 h-4 text-critical" />
+                <span className="text-xs text-slate-400">Non-Compliant</span>
+              </div>
+              <div className="text-2xl font-bold text-critical">
+                {complianceStatusReport.nonCompliantControls}
+              </div>
+              <div className="text-xs text-slate-500 mt-1">controls</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main Content */}

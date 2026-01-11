@@ -1045,6 +1045,61 @@ export interface ScannedPort {
 }
 
 // ============================================================================
+// Compliance Status Types (Phase 3 - GRC Database)
+// ============================================================================
+
+export interface CategoryComplianceStatus {
+  code: string;
+  name: string;
+  description: string;
+  color: string;
+  totalControls: number;
+  assessedControls: number;
+  compliant: number;
+  partiallyCompliant: number;
+  nonCompliant: number;
+  completionPercentage: number;
+  compliancePercentage: number;
+}
+
+export interface ComplianceStatusReport {
+  framework: string;
+  completionPercentage: number;
+  compliancePercentage: number;
+  totalControls: number;
+  assessedControls: number;
+  compliantControls: number;
+  partiallyCompliantControls: number;
+  nonCompliantControls: number;
+  notApplicableControls: number;
+  categoryBreakdown: CategoryComplianceStatus[];
+  networkHealthScore: number | null;
+  totalAssets: number | null;
+  lastUpdated: string;
+}
+
+// ============================================================================
+// PDF Generation Types (Phase 3 - Executive Reporting)
+// ============================================================================
+
+export interface GenerateExecutivePdfRequest {
+  clientId: string;
+  clientName: string;
+  title?: string;
+  framework?: string;
+  includeNetworkData: boolean;
+  includeComplianceData: boolean;
+}
+
+export interface PdfGenerationResult {
+  success: boolean;
+  filePath: string;
+  fileSize: number;
+  pageCount: number;
+  message: string;
+}
+
+// ============================================================================
 // Error Types
 // ============================================================================
 
