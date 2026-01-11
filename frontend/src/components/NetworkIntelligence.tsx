@@ -13,6 +13,9 @@ import {
   getCommonPortList,
   validateScanTarget,
   previewScanCommand,
+  scanNetwork,
+  getDefaultScanPorts,
+  getExtendedScanPorts,
 } from "@/lib/commands";
 import type {
   NmapInfo,
@@ -20,9 +23,10 @@ import type {
   Asset,
   CommonPort,
   TargetValidation,
+  ScanNetworkResponse,
 } from "@/types";
 
-type NetworkTab = "scanner" | "assets" | "ports";
+type NetworkTab = "scanner" | "assets" | "ports" | "native";
 
 export function NetworkIntelligence() {
   const [activeTab, setActiveTab] = useState<NetworkTab>("assets");
@@ -88,6 +92,16 @@ export function NetworkIntelligence() {
           Asset Inventory
         </button>
         <button
+          onClick={() => setActiveTab("native")}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+            activeTab === "native"
+              ? "bg-blue-600 text-white"
+              : "text-slate-400 hover:text-white hover:bg-slate-700"
+          }`}
+        >
+          Quick Scan
+        </button>
+        <button
           onClick={() => setActiveTab("scanner")}
           className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
             activeTab === "scanner"
@@ -95,7 +109,7 @@ export function NetworkIntelligence() {
               : "text-slate-400 hover:text-white hover:bg-slate-700"
           }`}
         >
-          Network Scanner
+          Nmap Scanner
         </button>
         <button
           onClick={() => setActiveTab("ports")}
@@ -111,6 +125,7 @@ export function NetworkIntelligence() {
 
       {/* Tab Content */}
       {activeTab === "assets" && <AssetInventoryTab />}
+      {activeTab === "native" && <NativeScannerTab />}
       {activeTab === "scanner" && <NetworkScannerTab nmapInstalled={nmapInfo?.installed ?? false} />}
       {activeTab === "ports" && <PortReferenceTab />}
     </div>
@@ -348,6 +363,298 @@ function AssetInventoryTab() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Native TCP Scanner Tab (Task B)
+// ============================================================================
+
+function NativeScannerTab() {
+  const [cidr, setCidr] = useState("");
+  const [useExtendedPorts, setUseExtendedPorts] = useState(false);
+  const [customPorts, setCustomPorts] = useState("");
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanResult, setScanResult] = useState<ScanNetworkResponse | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [defaultPorts, setDefaultPorts] = useState<number[]>([]);
+  const [extendedPorts, setExtendedPorts] = useState<number[]>([]);
+
+  useEffect(() => {
+    // Load port configurations
+    getDefaultScanPorts().then(setDefaultPorts).catch(console.error);
+    getExtendedScanPorts().then(setExtendedPorts).catch(console.error);
+  }, []);
+
+  const handleScan = async () => {
+    if (!cidr) {
+      setScanError("Please enter a target CIDR");
+      return;
+    }
+
+    setIsScanning(true);
+    setScanError(null);
+    setScanResult(null);
+
+    try {
+      // Parse custom ports if provided
+      let ports: number[] | undefined;
+      if (customPorts.trim()) {
+        ports = customPorts.split(",")
+          .map((p) => parseInt(p.trim()))
+          .filter((p) => !isNaN(p) && p > 0 && p <= 65535);
+      }
+
+      const result = await scanNetwork({
+        cidr,
+        ports,
+        extended: useExtendedPorts,
+      });
+
+      setScanResult(result);
+    } catch (error) {
+      setScanError(String(error));
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Scanner Info Banner */}
+      <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
+        <div className="flex items-center space-x-3">
+          <div className="w-3 h-3 rounded-full bg-blue-500" />
+          <span className="text-white font-medium">Native TCP Scanner</span>
+        </div>
+        <p className="text-slate-400 text-sm mt-2">
+          Fast, lightweight TCP connect scanner built into Optio. No external dependencies required.
+          Detects open ports using async TCP connections.
+        </p>
+      </div>
+
+      {/* Scan Configuration */}
+      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6">
+        <h3 className="text-lg font-semibold text-white mb-4">Scan Configuration</h3>
+
+        <div className="grid grid-cols-2 gap-6">
+          {/* Left Column */}
+          <div className="space-y-4">
+            {/* Target Input */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Target (CIDR)
+              </label>
+              <input
+                type="text"
+                value={cidr}
+                onChange={(e) => setCidr(e.target.value)}
+                placeholder="192.168.1.0/24"
+                className="w-full bg-slate-900 border border-slate-600 rounded-md px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Enter a CIDR range (max /16 for safety)
+              </p>
+            </div>
+
+            {/* Custom Ports */}
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-2">
+                Custom Ports (optional)
+              </label>
+              <input
+                type="text"
+                value={customPorts}
+                onChange={(e) => setCustomPorts(e.target.value)}
+                placeholder="80, 443, 8080, 8443"
+                className="w-full bg-slate-900 border border-slate-600 rounded-md px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Comma-separated port numbers (overrides default/extended)
+              </p>
+            </div>
+
+            {/* Extended Ports Toggle */}
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="extendedPorts"
+                checked={useExtendedPorts}
+                onChange={(e) => setUseExtendedPorts(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-600 bg-slate-900 text-blue-500 focus:ring-blue-500"
+              />
+              <label htmlFor="extendedPorts" className="text-slate-300 text-sm">
+                Use extended port list ({extendedPorts.length} common ports)
+              </label>
+            </div>
+          </div>
+
+          {/* Right Column - Port Info */}
+          <div className="bg-slate-900 rounded-lg p-4">
+            <h4 className="text-white font-medium mb-2">Port Configuration</h4>
+            <div className="space-y-3 text-sm">
+              <div>
+                <span className="text-slate-400">Default ports:</span>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {defaultPorts.map((port) => (
+                    <span key={port} className="px-2 py-0.5 bg-slate-700 rounded text-blue-400">
+                      {port}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {useExtendedPorts && (
+                <div>
+                  <span className="text-slate-400">Extended ports:</span>
+                  <div className="flex flex-wrap gap-1 mt-1">
+                    {extendedPorts.map((port) => (
+                      <span key={port} className="px-1.5 py-0.5 bg-slate-700 rounded text-xs text-slate-300">
+                        {port}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Scan Button */}
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={handleScan}
+            disabled={isScanning || !cidr}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-medium rounded-md transition-colors flex items-center space-x-2"
+          >
+            {isScanning ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                <span>Scanning...</span>
+              </>
+            ) : (
+              <span>Start Scan</span>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Error Display */}
+      {scanError && (
+        <div className="bg-red-900/20 border border-red-700 rounded-lg p-4">
+          <div className="flex items-center space-x-2 text-red-400">
+            <span className="font-medium">Scan Error:</span>
+            <span>{scanError}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Scan Results */}
+      {scanResult && (
+        <div className="space-y-4">
+          {/* Summary Stats */}
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+              <div className="text-3xl font-bold text-white">{scanResult.hostsScanned}</div>
+              <div className="text-sm text-slate-400">Hosts Scanned</div>
+            </div>
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+              <div className="text-3xl font-bold text-green-400">{scanResult.hostsAlive}</div>
+              <div className="text-sm text-slate-400">Hosts Found</div>
+            </div>
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+              <div className="text-3xl font-bold text-blue-400">{scanResult.portsScanned.length}</div>
+              <div className="text-sm text-slate-400">Ports Checked</div>
+            </div>
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-4">
+              <div className="text-3xl font-bold text-purple-400">{(scanResult.durationMs / 1000).toFixed(1)}s</div>
+              <div className="text-sm text-slate-400">Duration</div>
+            </div>
+          </div>
+
+          {/* Host List */}
+          {scanResult.hosts.length > 0 ? (
+            <div className="bg-slate-800 border border-slate-700 rounded-lg overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-slate-900">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      IP Address
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Hostname
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Open Ports
+                    </th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-slate-400 uppercase tracking-wider">
+                      Services
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700">
+                  {scanResult.hosts.map((host) => (
+                    <tr key={host.ipAddress} className="hover:bg-slate-700/50 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className="font-mono text-white">{host.ipAddress}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="text-slate-400">
+                          {host.hostname || "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {host.openPorts.map((p) => (
+                            <span
+                              key={p.port}
+                              className="px-2 py-0.5 bg-green-900/50 text-green-400 rounded text-xs font-mono"
+                            >
+                              {p.port}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {host.openPorts.map((p) => (
+                            <span
+                              key={p.port}
+                              className="px-2 py-0.5 bg-slate-700 text-slate-300 rounded text-xs"
+                            >
+                              {p.service}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-8 text-center">
+              <div className="text-slate-400">
+                No live hosts found with open ports in the specified range.
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Instructions */}
+      {!scanResult && !isScanning && (
+        <div className="bg-slate-800 border border-slate-700 rounded-lg p-8 text-center">
+          <div className="text-6xl mb-4">🔍</div>
+          <h3 className="text-xl font-semibold text-white mb-2">
+            Ready to Scan
+          </h3>
+          <p className="text-slate-400">
+            Enter a CIDR range above to discover hosts with open ports.
+            The native scanner uses async TCP connections for fast discovery.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

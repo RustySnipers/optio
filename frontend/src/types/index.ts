@@ -993,6 +993,58 @@ export interface ReportStats {
 }
 
 // ============================================================================
+// Agent Script Types (Task A - Core Mechanics)
+// ============================================================================
+
+export interface GenerateAgentScriptRequest {
+  clientIp: string;
+  authToken: string;
+  callbackPort?: number;
+  useTls?: boolean;
+  heartbeatInterval?: number;
+}
+
+export interface AgentScriptResponse {
+  success: boolean;
+  scriptContent: string;
+  scriptId: string;
+  generatedAt: string;
+  warnings: string[];
+}
+
+// ============================================================================
+// Native TCP Scanner Types (Task B - Core Mechanics)
+// ============================================================================
+
+export interface ScanNetworkRequest {
+  cidr: string;
+  ports?: number[];
+  extended?: boolean;
+}
+
+export interface ScanNetworkResponse {
+  success: boolean;
+  hosts: ScannedHost[];
+  hostsScanned: number;
+  hostsAlive: number;
+  portsScanned: number[];
+  durationMs: number;
+}
+
+export interface ScannedHost {
+  ipAddress: string;
+  openPorts: ScannedPort[];
+  isAlive: boolean;
+  hostname: string | null;
+}
+
+export interface ScannedPort {
+  port: number;
+  open: boolean;
+  service: string;
+}
+
+// ============================================================================
 // Error Types
 // ============================================================================
 

@@ -29,6 +29,12 @@ pub enum OptioError {
 
     #[error("Encryption error: {0}")]
     Encryption(String),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+
+    #[error("Network scan error: {0}")]
+    NetworkScan(String),
 }
 
 /// Serializable error response for frontend
@@ -50,6 +56,8 @@ impl From<OptioError> for ErrorResponse {
             OptioError::Serialization(_) => "SERIALIZATION_ERROR",
             OptioError::ClientNotFound(_) => "CLIENT_NOT_FOUND",
             OptioError::Encryption(_) => "ENCRYPTION_ERROR",
+            OptioError::Validation(_) => "VALIDATION_ERROR",
+            OptioError::NetworkScan(_) => "NETWORK_SCAN_ERROR",
         };
 
         ErrorResponse {

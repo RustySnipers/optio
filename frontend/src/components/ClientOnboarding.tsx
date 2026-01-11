@@ -5,6 +5,7 @@ import {
   getScriptPreview,
   validateConfig,
   getConsultantIp,
+  generateAgentScript,
 } from "@/lib/commands";
 import type {
   TemplateInfo,
@@ -12,6 +13,7 @@ import type {
   GenerateScriptResponse,
   ValidationResult,
   LogEntry,
+  AgentScriptResponse,
 } from "@/types";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +30,8 @@ import {
   Shield,
   Wifi,
   Terminal,
+  Radio,
+  Key,
 } from "lucide-react";
 
 export function ClientOnboarding() {
@@ -56,8 +60,17 @@ export function ClientOnboarding() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [activeTab, setActiveTab] = useState<"config" | "preview" | "output">("config");
+  const [activeTab, setActiveTab] = useState<"config" | "preview" | "output" | "agent">("config");
   const [dnsInput, setDnsInput] = useState("");
+
+  // Agent script state (Task A)
+  const [agentClientIp, setAgentClientIp] = useState<string>("");
+  const [agentAuthToken, setAgentAuthToken] = useState<string>("");
+  const [agentCallbackPort, setAgentCallbackPort] = useState<number>(443);
+  const [agentUseTls, setAgentUseTls] = useState<boolean>(true);
+  const [agentHeartbeatInterval, setAgentHeartbeatInterval] = useState<number>(30);
+  const [generatedAgentScript, setGeneratedAgentScript] = useState<AgentScriptResponse | null>(null);
+  const [isGeneratingAgent, setIsGeneratingAgent] = useState(false);
 
   // Load initial data
   useEffect(() => {
@@ -69,6 +82,7 @@ export function ClientOnboarding() {
         ]);
         setTemplates(templateData);
         setConsultantIp(ip);
+        setAgentClientIp(ip); // Set default agent callback IP
         addLog("info", "Factory module initialized");
         addLog("info", `Consultant IP detected: ${ip}`);
       } catch (error) {
@@ -190,6 +204,50 @@ export function ClientOnboarding() {
     }
   };
 
+  // Generate agent script (Task A)
+  const handleGenerateAgentScript = async () => {
+    if (!agentClientIp) {
+      addLog("error", "Client IP is required for agent script generation");
+      return;
+    }
+
+    // Auto-generate auth token if empty
+    const authToken = agentAuthToken || crypto.randomUUID();
+    if (!agentAuthToken) {
+      setAgentAuthToken(authToken);
+      addLog("info", "Generated new authentication token");
+    }
+
+    setIsGeneratingAgent(true);
+    addLog("info", "Generating agent callback script...");
+
+    try {
+      const result = await generateAgentScript({
+        clientIp: agentClientIp,
+        authToken,
+        callbackPort: agentCallbackPort,
+        useTls: agentUseTls,
+        heartbeatInterval: agentHeartbeatInterval,
+      });
+
+      setGeneratedAgentScript(result);
+      addLog("success", `Agent script generated: ${result.scriptId}`);
+      result.warnings.forEach((warn) => addLog("warn", warn));
+    } catch (error) {
+      addLog("error", `Agent script generation failed: ${error}`);
+    } finally {
+      setIsGeneratingAgent(false);
+    }
+  };
+
+  // Copy agent script to clipboard
+  const handleCopyAgentScript = async () => {
+    if (generatedAgentScript?.scriptContent) {
+      await navigator.clipboard.writeText(generatedAgentScript.scriptContent);
+      addLog("info", "Agent script copied to clipboard");
+    }
+  };
+
   return (
     <div className="h-full flex">
       {/* Main Content */}
@@ -213,6 +271,7 @@ export function ClientOnboarding() {
             { id: "config", label: "Configuration", icon: Server },
             { id: "preview", label: "Preview", icon: FileCode },
             { id: "output", label: "Output", icon: Terminal },
+            { id: "agent", label: "Agent Script", icon: Radio },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -568,6 +627,185 @@ export function ClientOnboarding() {
                 <FileCode className="w-12 h-12 mx-auto mb-4 opacity-50" />
                 <p>No script generated yet.</p>
                 <p className="text-sm">Configure and generate a script to see output here.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Agent Script Tab (Task A) */}
+        {activeTab === "agent" && (
+          <div className="space-y-6">
+            {/* Agent Configuration */}
+            <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
+              <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <Radio className="w-5 h-5 text-optio-400" />
+                Agent Callback Configuration
+              </h2>
+              <p className="text-sm text-slate-400 mb-6">
+                Generate a PowerShell agent script that establishes a reverse connection to the Optio server.
+                The script includes hardcoded connection parameters for secure callback communication.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Callback IP Address *
+                  </label>
+                  <input
+                    type="text"
+                    value={agentClientIp}
+                    onChange={(e) => setAgentClientIp(e.target.value)}
+                    placeholder="192.168.1.100"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-optio-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    The IP address of this Optio server
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-2">
+                    Callback Port
+                  </label>
+                  <input
+                    type="number"
+                    value={agentCallbackPort}
+                    onChange={(e) => setAgentCallbackPort(parseInt(e.target.value) || 443)}
+                    placeholder="443"
+                    min={1}
+                    max={65535}
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-optio-500 focus:border-transparent"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Port for callback (443 recommended)
+                  </p>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
+                    <Key className="w-4 h-4" />
+                    Authentication Token
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={agentAuthToken}
+                      onChange={(e) => setAgentAuthToken(e.target.value)}
+                      placeholder="Leave empty to auto-generate"
+                      className="flex-1 px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-optio-500 focus:border-transparent font-mono text-sm"
+                    />
+                    <button
+                      onClick={() => setAgentAuthToken(crypto.randomUUID())}
+                      className="px-4 py-2.5 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Unique token for authenticating the agent connection
+                  </p>
+                </div>
+              </div>
+
+              {/* Options */}
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <ToggleOption
+                  label="Enable TLS"
+                  description="Encrypt callback communication (recommended)"
+                  checked={agentUseTls}
+                  onChange={setAgentUseTls}
+                />
+                <div className="p-3 bg-slate-900/50 rounded-lg">
+                  <label className="block text-sm font-medium text-white mb-2">
+                    Heartbeat Interval
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={agentHeartbeatInterval}
+                      onChange={(e) => setAgentHeartbeatInterval(parseInt(e.target.value) || 30)}
+                      min={5}
+                      max={3600}
+                      className="w-24 px-3 py-2 bg-slate-800 border border-slate-700 rounded text-white text-sm"
+                    />
+                    <span className="text-sm text-slate-400">seconds</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Generate Button */}
+            <div className="flex gap-3">
+              <button
+                onClick={handleGenerateAgentScript}
+                disabled={isGeneratingAgent || !agentClientIp}
+                className="flex items-center gap-2 px-6 py-2.5 bg-optio-600 text-white rounded-lg hover:bg-optio-700 transition-colors disabled:opacity-50"
+              >
+                {isGeneratingAgent ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Play className="w-4 h-4" />
+                )}
+                Generate Agent Script
+              </button>
+            </div>
+
+            {/* Generated Agent Script Output */}
+            {generatedAgentScript && (
+              <div className="space-y-4">
+                <div className="bg-secure/10 border border-secure/30 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Check className="w-5 h-5 text-secure" />
+                    <span className="font-medium text-secure">Agent Script Generated Successfully</span>
+                  </div>
+                  <div className="text-sm text-slate-300 space-y-1">
+                    <p>
+                      <strong>Script ID:</strong>{" "}
+                      <code className="bg-slate-800 px-2 py-0.5 rounded">{generatedAgentScript.scriptId}</code>
+                    </p>
+                    <p>
+                      <strong>Generated:</strong> {new Date(generatedAgentScript.generatedAt).toLocaleString()}
+                    </p>
+                    <p>
+                      <strong>Callback:</strong>{" "}
+                      <code className="bg-slate-800 px-2 py-0.5 rounded">{agentClientIp}:{agentCallbackPort}</code>
+                    </p>
+                  </div>
+                  {generatedAgentScript.warnings.length > 0 && (
+                    <div className="mt-3 space-y-1">
+                      {generatedAgentScript.warnings.map((warn, i) => (
+                        <div key={i} className="flex items-center gap-2 text-warning text-sm">
+                          <AlertTriangle className="w-4 h-4" />
+                          {warn}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleCopyAgentScript}
+                    className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy Script
+                  </button>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800 rounded-lg p-4 overflow-auto max-h-[500px]">
+                  <pre className="code-preview text-slate-300 whitespace-pre-wrap text-xs">
+                    {generatedAgentScript.scriptContent}
+                  </pre>
+                </div>
+              </div>
+            )}
+
+            {!generatedAgentScript && (
+              <div className="text-center py-12 text-slate-400 bg-slate-800/50 border border-slate-700/50 rounded-xl">
+                <Radio className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>Configure the callback parameters above and click "Generate Agent Script"</p>
+                <p className="text-sm mt-2">
+                  The generated script will establish a reverse connection to this Optio server.
+                </p>
               </div>
             )}
           </div>
