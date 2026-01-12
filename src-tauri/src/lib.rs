@@ -150,13 +150,16 @@ pub fn run() {
             commands::reporting::generate_executive_pdf,
             commands::reporting::generate_demo_pdf,
             commands::reporting::open_pdf_location,
-            // Crypto commands (Hub signing)
+            // Crypto commands (Hub signing with persistence)
             commands::crypto::generate_signing_keypair,
             commands::crypto::get_public_key,
             commands::crypto::sign_command,
             commands::crypto::generate_agent_verifier,
             commands::crypto::export_keypair,
             commands::crypto::import_keypair,
+            commands::crypto::list_keypairs,
+            commands::crypto::rotate_keypair,
+            commands::crypto::get_active_key_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -83,6 +83,33 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
             CREATE INDEX IF NOT EXISTS idx_script_history_client ON script_history(client_id);
             CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+
+            -- Hub signing keypairs (encrypted private key storage)
+            CREATE TABLE IF NOT EXISTS hub_keypairs (
+                id TEXT PRIMARY KEY,
+                key_id TEXT NOT NULL UNIQUE,
+                public_key TEXT NOT NULL,
+                encrypted_private_key BLOB NOT NULL,
+                nonce BLOB NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL,
+                rotated_at TEXT
+            );
+
+            -- Agent registration tokens
+            CREATE TABLE IF NOT EXISTS agent_tokens (
+                id TEXT PRIMARY KEY,
+                script_id TEXT NOT NULL UNIQUE,
+                token_hash TEXT NOT NULL,
+                client_id TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT,
+                last_used_at TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_hub_keypairs_active ON hub_keypairs(is_active);
+            CREATE INDEX IF NOT EXISTS idx_agent_tokens_script ON agent_tokens(script_id);
         "#)?;
 
         tracing::info!("Database schema initialized");

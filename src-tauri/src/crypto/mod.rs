@@ -11,6 +11,10 @@
 //! - All commands include timestamp to prevent replay attacks
 //! - Commands include SHA-256 hash of payload for integrity verification
 
+pub mod repository;
+
+pub use repository::{KeyPairRepository, StoredKeyPair};
+
 use crate::error::{OptioError, OptioResult};
 use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
