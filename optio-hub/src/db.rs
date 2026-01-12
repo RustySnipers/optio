@@ -245,7 +245,8 @@ pub async fn initialize(app_handle: &AppHandle) -> OptioResult<()> {
     db.init_schema()?;
 
     // Initialize GRC schema
-    crate::grc::repository::init_grc_schema(&db)?;
+    optio_core::grc::repository::init_grc_schema(&db.conn)
+        .map_err(|e| OptioError::Database(e.to_string()))?;
 
     // Store database in app state
     app_handle.manage(db);

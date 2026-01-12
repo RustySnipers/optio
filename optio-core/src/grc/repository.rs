@@ -2,16 +2,38 @@
 //!
 //! Database operations for GRC assessments, controls, and evidence.
 
-use crate::db::Database;
-use crate::error::{OptioError, OptioResult};
 use crate::grc::models::*;
 use chrono::Utc;
-use rusqlite::params;
+use rusqlite::{params, Connection};
+use std::sync::Mutex;
 use uuid::Uuid;
 
+#[derive(Debug)]
+pub enum GrcError {
+    Database(String),
+}
+
+impl std::fmt::Display for GrcError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GrcError::Database(message) => write!(f, "Database error: {}", message),
+        }
+    }
+}
+
+impl std::error::Error for GrcError {}
+
+impl From<rusqlite::Error> for GrcError {
+    fn from(err: rusqlite::Error) -> Self {
+        GrcError::Database(err.to_string())
+    }
+}
+
+pub type GrcResult<T> = Result<T, GrcError>;
+
 /// Initialize GRC database schema
-pub fn init_grc_schema(db: &Database) -> OptioResult<()> {
-    let conn = db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+pub fn init_grc_schema(conn: &Mutex<Connection>) -> GrcResult<()> {
+    let conn = conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
     conn.execute_batch(r#"
         -- Assessments table
@@ -83,16 +105,16 @@ pub fn init_grc_schema(db: &Database) -> OptioResult<()> {
 
 /// Assessment repository
 pub struct AssessmentRepository<'a> {
-    db: &'a Database,
+    conn: &'a Mutex<Connection>,
 }
 
 impl<'a> AssessmentRepository<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        AssessmentRepository { db }
+    pub fn new(conn: &'a Mutex<Connection>) -> Self {
+        AssessmentRepository { conn }
     }
 
-    pub fn create(&self, assessment: &Assessment) -> OptioResult<()> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn create(&self, assessment: &Assessment) -> GrcResult<()> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         conn.execute(
             r#"INSERT INTO assessments
@@ -116,8 +138,8 @@ impl<'a> AssessmentRepository<'a> {
         Ok(())
     }
 
-    pub fn get(&self, id: &str) -> OptioResult<Option<Assessment>> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn get(&self, id: &str) -> GrcResult<Option<Assessment>> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         let mut stmt = conn.prepare(
             r#"SELECT id, client_id, name, description, framework, scope,
@@ -134,8 +156,8 @@ impl<'a> AssessmentRepository<'a> {
         }
     }
 
-    pub fn list_by_client(&self, client_id: &str) -> OptioResult<Vec<Assessment>> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn list_by_client(&self, client_id: &str) -> GrcResult<Vec<Assessment>> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         let mut stmt = conn.prepare(
             r#"SELECT id, client_id, name, description, framework, scope,
@@ -152,8 +174,8 @@ impl<'a> AssessmentRepository<'a> {
         Ok(assessments)
     }
 
-    pub fn list_all(&self) -> OptioResult<Vec<Assessment>> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn list_all(&self) -> GrcResult<Vec<Assessment>> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         let mut stmt = conn.prepare(
             r#"SELECT id, client_id, name, description, framework, scope,
@@ -170,8 +192,8 @@ impl<'a> AssessmentRepository<'a> {
         Ok(assessments)
     }
 
-    pub fn update_status(&self, id: &str, status: AssessmentStatus) -> OptioResult<bool> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn update_status(&self, id: &str, status: AssessmentStatus) -> GrcResult<bool> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         let completed_at = if status == AssessmentStatus::Completed {
             Some(Utc::now().to_rfc3339())
@@ -187,8 +209,8 @@ impl<'a> AssessmentRepository<'a> {
         Ok(updated > 0)
     }
 
-    pub fn delete(&self, id: &str) -> OptioResult<bool> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn delete(&self, id: &str) -> GrcResult<bool> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
         let deleted = conn.execute("DELETE FROM assessments WHERE id = ?1", params![id])?;
         Ok(deleted > 0)
     }
@@ -196,16 +218,16 @@ impl<'a> AssessmentRepository<'a> {
 
 /// Control assessment repository
 pub struct ControlAssessmentRepository<'a> {
-    db: &'a Database,
+    conn: &'a Mutex<Connection>,
 }
 
 impl<'a> ControlAssessmentRepository<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        ControlAssessmentRepository { db }
+    pub fn new(conn: &'a Mutex<Connection>) -> Self {
+        ControlAssessmentRepository { conn }
     }
 
-    pub fn upsert(&self, ca: &ControlAssessment) -> OptioResult<()> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn upsert(&self, ca: &ControlAssessment) -> GrcResult<()> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         conn.execute(
             r#"INSERT INTO control_assessments
@@ -239,8 +261,8 @@ impl<'a> ControlAssessmentRepository<'a> {
         Ok(())
     }
 
-    pub fn get_by_assessment(&self, assessment_id: &str) -> OptioResult<Vec<ControlAssessment>> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn get_by_assessment(&self, assessment_id: &str) -> GrcResult<Vec<ControlAssessment>> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         let mut stmt = conn.prepare(
             r#"SELECT id, assessment_id, control_id, status, notes, gap_description,
@@ -257,8 +279,12 @@ impl<'a> ControlAssessmentRepository<'a> {
         Ok(assessments)
     }
 
-    pub fn get_by_control(&self, assessment_id: &str, control_id: &str) -> OptioResult<Option<ControlAssessment>> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn get_by_control(
+        &self,
+        assessment_id: &str,
+        control_id: &str,
+    ) -> GrcResult<Option<ControlAssessment>> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         let mut stmt = conn.prepare(
             r#"SELECT id, assessment_id, control_id, status, notes, gap_description,
@@ -278,16 +304,16 @@ impl<'a> ControlAssessmentRepository<'a> {
 
 /// Evidence repository
 pub struct EvidenceRepository<'a> {
-    db: &'a Database,
+    conn: &'a Mutex<Connection>,
 }
 
 impl<'a> EvidenceRepository<'a> {
-    pub fn new(db: &'a Database) -> Self {
-        EvidenceRepository { db }
+    pub fn new(conn: &'a Mutex<Connection>) -> Self {
+        EvidenceRepository { conn }
     }
 
-    pub fn create(&self, evidence: &Evidence) -> OptioResult<()> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn create(&self, evidence: &Evidence) -> GrcResult<()> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         conn.execute(
             r#"INSERT INTO evidence
@@ -320,8 +346,8 @@ impl<'a> EvidenceRepository<'a> {
         Ok(())
     }
 
-    pub fn get_by_assessment(&self, assessment_id: &str) -> OptioResult<Vec<Evidence>> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn get_by_assessment(&self, assessment_id: &str) -> GrcResult<Vec<Evidence>> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
 
         let mut stmt = conn.prepare(
             r#"SELECT id, assessment_id, evidence_type, title, description, file_path,
@@ -352,14 +378,14 @@ impl<'a> EvidenceRepository<'a> {
         Ok(result)
     }
 
-    pub fn delete(&self, id: &str) -> OptioResult<bool> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn delete(&self, id: &str) -> GrcResult<bool> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
         let deleted = conn.execute("DELETE FROM evidence WHERE id = ?1", params![id])?;
         Ok(deleted > 0)
     }
 
-    pub fn count_by_assessment(&self, assessment_id: &str) -> OptioResult<usize> {
-        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+    pub fn count_by_assessment(&self, assessment_id: &str) -> GrcResult<usize> {
+        let conn = self.conn.lock().map_err(|e| GrcError::Database(e.to_string()))?;
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM evidence WHERE assessment_id = ?1",
             params![assessment_id],
@@ -371,7 +397,7 @@ impl<'a> EvidenceRepository<'a> {
 
 // Helper functions for parsing rows
 
-fn parse_assessment_row(row: &rusqlite::Row) -> OptioResult<Assessment> {
+fn parse_assessment_row(row: &rusqlite::Row) -> GrcResult<Assessment> {
     let framework_str: String = row.get(4)?;
     let status_str: String = row.get(9)?;
 
@@ -391,7 +417,7 @@ fn parse_assessment_row(row: &rusqlite::Row) -> OptioResult<Assessment> {
     })
 }
 
-fn parse_control_assessment_row(row: &rusqlite::Row) -> OptioResult<ControlAssessment> {
+fn parse_control_assessment_row(row: &rusqlite::Row) -> GrcResult<ControlAssessment> {
     let status_str: String = row.get(3)?;
 
     Ok(ControlAssessment {
@@ -412,7 +438,7 @@ fn parse_control_assessment_row(row: &rusqlite::Row) -> OptioResult<ControlAsses
     })
 }
 
-fn parse_evidence_row(row: &rusqlite::Row, control_ids: Vec<String>) -> OptioResult<Evidence> {
+fn parse_evidence_row(row: &rusqlite::Row, control_ids: Vec<String>) -> GrcResult<Evidence> {
     let type_str: String = row.get(2)?;
 
     Ok(Evidence {
@@ -431,38 +457,38 @@ fn parse_evidence_row(row: &rusqlite::Row, control_ids: Vec<String>) -> OptioRes
     })
 }
 
-fn parse_framework(s: &str) -> OptioResult<Framework> {
+fn parse_framework(s: &str) -> GrcResult<Framework> {
     match s {
         "NistCsf2" => Ok(Framework::NistCsf2),
         "Soc2TypeII" => Ok(Framework::Soc2TypeII),
         "Gdpr" => Ok(Framework::Gdpr),
-        _ => Err(OptioError::Database(format!("Unknown framework: {}", s))),
+        _ => Err(GrcError::Database(format!("Unknown framework: {}", s))),
     }
 }
 
-fn parse_assessment_status(s: &str) -> OptioResult<AssessmentStatus> {
+fn parse_assessment_status(s: &str) -> GrcResult<AssessmentStatus> {
     match s {
         "Draft" => Ok(AssessmentStatus::Draft),
         "InProgress" => Ok(AssessmentStatus::InProgress),
         "UnderReview" => Ok(AssessmentStatus::UnderReview),
         "Completed" => Ok(AssessmentStatus::Completed),
         "Archived" => Ok(AssessmentStatus::Archived),
-        _ => Err(OptioError::Database(format!("Unknown assessment status: {}", s))),
+        _ => Err(GrcError::Database(format!("Unknown assessment status: {}", s))),
     }
 }
 
-fn parse_compliance_status(s: &str) -> OptioResult<ComplianceStatus> {
+fn parse_compliance_status(s: &str) -> GrcResult<ComplianceStatus> {
     match s {
         "NotAssessed" => Ok(ComplianceStatus::NotAssessed),
         "Compliant" => Ok(ComplianceStatus::Compliant),
         "PartiallyCompliant" => Ok(ComplianceStatus::PartiallyCompliant),
         "NonCompliant" => Ok(ComplianceStatus::NonCompliant),
         "NotApplicable" => Ok(ComplianceStatus::NotApplicable),
-        _ => Err(OptioError::Database(format!("Unknown compliance status: {}", s))),
+        _ => Err(GrcError::Database(format!("Unknown compliance status: {}", s))),
     }
 }
 
-fn parse_evidence_type(s: &str) -> OptioResult<EvidenceType> {
+fn parse_evidence_type(s: &str) -> GrcResult<EvidenceType> {
     match s {
         "Document" => Ok(EvidenceType::Document),
         "Screenshot" => Ok(EvidenceType::Screenshot),
@@ -471,12 +497,12 @@ fn parse_evidence_type(s: &str) -> OptioResult<EvidenceType> {
         "Interview" => Ok(EvidenceType::Interview),
         "LogFile" => Ok(EvidenceType::LogFile),
         "Other" => Ok(EvidenceType::Other),
-        _ => Err(OptioError::Database(format!("Unknown evidence type: {}", s))),
+        _ => Err(GrcError::Database(format!("Unknown evidence type: {}", s))),
     }
 }
 
-fn parse_datetime(s: &str) -> OptioResult<chrono::DateTime<Utc>> {
+fn parse_datetime(s: &str) -> GrcResult<chrono::DateTime<Utc>> {
     chrono::DateTime::parse_from_rfc3339(s)
         .map(|d| d.with_timezone(&Utc))
-        .map_err(|e| OptioError::Database(format!("Invalid datetime: {}", e)))
+        .map_err(|e| GrcError::Database(format!("Invalid datetime: {}", e)))
 }

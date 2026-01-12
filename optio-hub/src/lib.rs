@@ -5,9 +5,6 @@
 
 pub mod commands;
 pub mod factory;
-pub mod grc;
-pub mod infrastructure;
-pub mod network;
 pub mod reporting;
 pub mod error;
 pub mod db;

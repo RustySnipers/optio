@@ -3,7 +3,7 @@
 //! Tauri commands for Infrastructure & Migration module operations.
 //! Includes Cloud Readiness Assessment, K8s Hardening Audit, and FinOps Calculator.
 
-use crate::infrastructure::{
+use optio_core::infrastructure::{
     models::*,
     cloud_readiness::{get_cloud_readiness_checklist, CloudReadinessAssessor},
     k8s_hardening::{get_k8s_hardening_checks, K8sHardeningAuditor},

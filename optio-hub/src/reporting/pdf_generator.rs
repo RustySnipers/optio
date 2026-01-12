@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-use crate::grc::models::{ComplianceStatusReport, ExecutiveReportData};
+use optio_core::grc::models::{ComplianceStatusReport, ExecutiveReportData};
 
 /// PDF Generator for executive reports
 pub struct PdfGenerator {
@@ -490,7 +490,7 @@ pub fn generate_demo_executive_report(
     client_name: &str,
     output_path: &PathBuf,
 ) -> Result<u64, String> {
-    use crate::grc::models::{
+    use optio_core::grc::models::{
         AssetCategoryCount, CategoryComplianceStatus, ExecutiveFinding,
         Framework, RiskSummary,
     };

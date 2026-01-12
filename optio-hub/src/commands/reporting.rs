@@ -3,7 +3,7 @@
 //! Tauri commands for report generation and management.
 
 use crate::db::Database;
-use crate::grc::{
+use optio_core::grc::{
     models::{AssetCategoryCount, ComplianceStatusReport, ExecutiveFinding, ExecutiveReportData, Framework, RiskSummary, CategoryComplianceStatus},
     frameworks::{get_framework_controls, get_framework_categories},
     repository::{AssessmentRepository, ControlAssessmentRepository},
@@ -580,8 +580,8 @@ async fn build_compliance_status(
     let controls = get_framework_controls(fw);
     let categories = get_framework_categories(fw);
 
-    let assessment_repo = AssessmentRepository::new(db);
-    let control_repo = ControlAssessmentRepository::new(db);
+    let assessment_repo = AssessmentRepository::new(&db.conn);
+    let control_repo = ControlAssessmentRepository::new(&db.conn);
 
     let assessments = if let Some(cid) = client_id {
         assessment_repo.list_by_client(cid).map_err(|e| e.to_string())?
@@ -594,7 +594,8 @@ async fn build_compliance_status(
         .filter(|a| a.framework == fw)
         .collect();
 
-    let mut all_control_assessments: HashMap<String, crate::grc::models::ControlAssessment> = HashMap::new();
+    let mut all_control_assessments: HashMap<String, optio_core::grc::models::ControlAssessment> =
+        HashMap::new();
     for assessment in &framework_assessments {
         if let Ok(cas) = control_repo.get_by_assessment(&assessment.id) {
             for ca in cas {
@@ -612,7 +613,7 @@ async fn build_compliance_status(
     let mut category_map: HashMap<String, (usize, usize, usize, usize, usize, usize)> = HashMap::new();
 
     for control in &controls {
-        use crate::grc::models::ComplianceStatus;
+        use optio_core::grc::models::ComplianceStatus;
         let status = all_control_assessments
             .get(&control.id)
             .map(|ca| ca.status)

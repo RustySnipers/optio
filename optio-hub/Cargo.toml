@@ -37,6 +37,7 @@ whoami = "1.5"
 ipnetwork = "0.20"
 futures = "0.3"
 printpdf = "0.7"
+optio-core = { path = "../optio-core" }
 
 [features]
 default = ["custom-protocol"]
