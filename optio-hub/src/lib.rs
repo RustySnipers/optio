@@ -8,9 +8,11 @@ pub mod factory;
 pub mod reporting;
 pub mod error;
 pub mod db;
+pub mod grpc;
 
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+pub use optio_core::{grc, infrastructure, network};
 
 /// Initialize the Tauri application with all plugins and commands
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -38,6 +38,7 @@ ipnetwork = "0.20"
 futures = "0.3"
 printpdf = "0.7"
 optio-core = { path = "../optio-core" }
+tonic = { workspace = true }
 
 [features]
 default = ["custom-protocol"]
