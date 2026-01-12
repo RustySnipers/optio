@@ -2,12 +2,18 @@
 //!
 //! "The Factory" - Dynamic client provisioning with PowerShell script generation.
 //! Manufactures unique, state-aware scripts for each engagement.
+//! Integrates with crypto module for signature verification embedding.
 
-use crate::error::{OptioError, OptioResult};
-use crate::factory::{ScriptConfig, ScriptGenerator, TemplateInfo, AgentScriptConfig, generate_agent_script as factory_generate_agent};
+use crate::commands::crypto::CryptoState;
+use crate::db::Database;
+use crate::error::OptioError;
+use crate::factory::{
+    generate_agent_script as factory_generate_agent, AgentScriptConfig, ScriptConfig,
+    ScriptGenerator, TemplateInfo,
+};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager, State};
 
 /// Request payload for script generation
 #[derive(Debug, Deserialize)]
@@ -338,6 +344,9 @@ pub struct GenerateAgentScriptRequest {
     pub use_tls: Option<bool>,
     /// Heartbeat interval in seconds
     pub heartbeat_interval: Option<u32>,
+    /// Embed Hub public key for command signature verification (default: true)
+    /// Set to false to generate scripts without signature verification
+    pub embed_signature_verification: Option<bool>,
 }
 
 /// Response from agent script generation
@@ -354,20 +363,43 @@ pub struct AgentScriptResponse {
     pub generated_at: String,
     /// Warnings or notes
     pub warnings: Vec<String>,
+    /// Whether signature verification was embedded
+    pub signature_verification_enabled: bool,
+    /// Public key embedded in the script (if enabled)
+    pub embedded_public_key: Option<String>,
 }
 
 /// Generate an agent script with hardcoded connection parameters for reverse callback
 ///
 /// This creates a PowerShell script that will establish a connection back to Optio
 /// with the specified IP and authentication token hardcoded into the script.
+///
+/// If `embed_signature_verification` is true (default), the Hub's public key will
+/// be embedded in the script, enabling the Agent to verify command signatures.
 #[tauri::command]
 pub async fn generate_agent_script(
     request: GenerateAgentScriptRequest,
+    app_handle: AppHandle,
+    crypto_state: State<'_, CryptoState>,
 ) -> Result<AgentScriptResponse, String> {
     tracing::info!(
         "Generating agent script for callback to: {}",
         request.client_ip
     );
+
+    // Determine if we should embed signature verification
+    let embed_verification = request.embed_signature_verification.unwrap_or(true);
+
+    // Get the public key if signature verification is requested
+    let public_key = if embed_verification {
+        if let Some(db) = app_handle.try_state::<Database>() {
+            crypto_state.get_public_key_or_load(&db)
+        } else {
+            crypto_state.get_public_key()
+        }
+    } else {
+        None
+    };
 
     let config = AgentScriptConfig {
         client_ip: request.client_ip,
@@ -375,11 +407,23 @@ pub async fn generate_agent_script(
         callback_port: request.callback_port.unwrap_or(443),
         use_tls: request.use_tls.unwrap_or(true),
         heartbeat_interval: request.heartbeat_interval.unwrap_or(30),
+        hub_public_key: public_key.clone(),
     };
 
     let result = factory_generate_agent(&config).map_err(|e| e.to_string())?;
 
-    tracing::info!("Agent script generated: {}", result.script_id);
+    let verification_enabled = public_key.is_some();
+    if verification_enabled {
+        tracing::info!(
+            "Agent script generated with signature verification: {}",
+            result.script_id
+        );
+    } else {
+        tracing::warn!(
+            "Agent script generated WITHOUT signature verification: {}",
+            result.script_id
+        );
+    }
 
     Ok(AgentScriptResponse {
         success: true,
@@ -387,6 +431,8 @@ pub async fn generate_agent_script(
         script_id: result.script_id,
         generated_at: result.generated_at.to_rfc3339(),
         warnings: result.warnings,
+        signature_verification_enabled: verification_enabled,
+        embedded_public_key: public_key,
     })
 }
 

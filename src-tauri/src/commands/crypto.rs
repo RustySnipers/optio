@@ -55,6 +55,31 @@ impl CryptoState {
             Ok(false)
         }
     }
+
+    /// Get the current public key (if a keypair is loaded)
+    ///
+    /// This is used by the Factory to embed the public key in Agent scripts.
+    pub fn get_public_key(&self) -> Option<String> {
+        self.keypair
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|kp| kp.public_key_hex()))
+    }
+
+    /// Get the current public key, loading from DB if not in memory
+    pub fn get_public_key_or_load(&self, db: &Database) -> Option<String> {
+        // Check memory first
+        if let Some(pk) = self.get_public_key() {
+            return Some(pk);
+        }
+
+        // Try to load from database
+        if self.load_from_db(db).ok() == Some(true) {
+            return self.get_public_key();
+        }
+
+        None
+    }
 }
 
 /// Response containing the public key after key generation

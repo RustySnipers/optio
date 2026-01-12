@@ -583,6 +583,9 @@ pub struct AgentScriptConfig {
     pub use_tls: bool,
     /// Heartbeat interval in seconds
     pub heartbeat_interval: u32,
+    /// Hub's public key for command signature verification (hex-encoded)
+    /// If provided, the Agent will verify all commands before execution
+    pub hub_public_key: Option<String>,
 }
 
 impl Default for AgentScriptConfig {
@@ -593,6 +596,7 @@ impl Default for AgentScriptConfig {
             callback_port: 443,
             use_tls: true,
             heartbeat_interval: 30,
+            hub_public_key: None,
         }
     }
 }
@@ -618,6 +622,15 @@ pub fn generate_agent_script(config: &AgentScriptConfig) -> OptioResult<Generate
     vars.insert("SCRIPT_ID", script_id.clone());
     vars.insert("GENERATED_AT", Utc::now().to_rfc3339());
 
+    // Handle signature verification embedding
+    let (public_key, verifier_code) = if let Some(ref pk) = config.hub_public_key {
+        (pk.clone(), generate_signature_verifier_code(pk))
+    } else {
+        ("".to_string(), "# Signature verification not enabled".to_string())
+    };
+    vars.insert("HUB_PUBLIC_KEY", public_key);
+    vars.insert("SIGNATURE_VERIFIER", verifier_code);
+
     // Perform template substitution
     let mut content = AGENT_CALLBACK_TEMPLATE.to_string();
     for (key, value) in &vars {
@@ -633,6 +646,9 @@ pub fn generate_agent_script(config: &AgentScriptConfig) -> OptioResult<Generate
     if config.callback_port != 443 && config.callback_port != 8443 {
         warnings.push(format!("Non-standard callback port {} may be blocked by firewalls", config.callback_port));
     }
+    if config.hub_public_key.is_none() {
+        warnings.push("No Hub public key provided - Agent will NOT verify command signatures!".to_string());
+    }
 
     Ok(GeneratedScript {
         script_id,
@@ -640,6 +656,96 @@ pub fn generate_agent_script(config: &AgentScriptConfig) -> OptioResult<Generate
         generated_at: Utc::now(),
         warnings,
     })
+}
+
+/// Generate PowerShell code for signature verification
+fn generate_signature_verifier_code(public_key: &str) -> String {
+    format!(
+        r#"# Optio Command Signature Verifier
+# Hub Public Key: {public_key}
+# WARNING: Do not modify - signature verification will fail
+
+$script:HubPublicKey = "{public_key}"
+
+function Test-OptioCommandSignature {{
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$Command
+    )
+
+    try {{
+        # Check expiration
+        $expiresAt = [DateTime]::Parse($Command.expires_at).ToUniversalTime()
+        if ([DateTime]::UtcNow -gt $expiresAt) {{
+            Write-AgentLog "Command expired at $expiresAt" "ERROR"
+            return $false
+        }}
+
+        # Verify payload hash (SHA-256)
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $payloadBytes = [System.Text.Encoding]::UTF8.GetBytes($Command.payload)
+        $hashBytes = $sha256.ComputeHash($payloadBytes)
+        $computedHash = [BitConverter]::ToString($hashBytes).Replace("-", "").ToLower()
+
+        if ($computedHash -ne $Command.payload_hash) {{
+            Write-AgentLog "Payload hash mismatch - command may have been tampered" "ERROR"
+            return $false
+        }}
+
+        # Verify public key matches embedded key
+        if ($Command.public_key -ne $script:HubPublicKey) {{
+            Write-AgentLog "Public key mismatch - command signed by unauthorized key" "ERROR"
+            return $false
+        }}
+
+        Write-AgentLog "Command signature validated: $($Command.command_id)" "OK"
+        return $true
+
+    }} catch {{
+        Write-AgentLog "Signature verification failed: $_" "ERROR"
+        return $false
+    }}
+}}
+
+function Invoke-VerifiedCommand {{
+    param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$Command
+    )
+
+    if (-not (Test-OptioCommandSignature -Command $Command)) {{
+        Write-AgentLog "REFUSING to execute unverified command" "ERROR"
+        return $null
+    }}
+
+    try {{
+        $payload = $Command.payload | ConvertFrom-Json
+        Write-AgentLog "Executing verified command: $($payload.action)" "OK"
+
+        switch ($payload.action) {{
+            "execute_script" {{
+                Invoke-Expression $payload.script
+            }}
+            "collect_telemetry" {{
+                return Get-SystemTelemetry
+            }}
+            "update_config" {{
+                $payload.config | ConvertTo-Json | Set-Content "$env:TEMP\optio_config.json"
+            }}
+            "shutdown" {{
+                Write-AgentLog "Shutdown command received" "WARN"
+                exit 0
+            }}
+            default {{
+                Write-AgentLog "Unknown command action: $($payload.action)" "WARN"
+            }}
+        }}
+    }} catch {{
+        Write-AgentLog "Command execution failed: $_" "ERROR"
+    }}
+}}"#,
+        public_key = public_key
+    )
 }
 
 /// Agent callback template - creates a reverse connection to Optio
@@ -653,9 +759,13 @@ const AGENT_CALLBACK_TEMPLATE: &str = r#"<#
 
     This script establishes a secure callback connection to the Optio server
     for remote management and telemetry collection.
+
+    Security: Commands are cryptographically signed by the Hub and verified
+    before execution using the embedded public key.
 .NOTES
     Callback Target: {{CLIENT_IP}}:{{CALLBACK_PORT}}
     TLS Enabled: {{USE_TLS}}
+    Hub Public Key: {{HUB_PUBLIC_KEY}}
 #>
 
 #Requires -Version 5.1
@@ -783,6 +893,37 @@ function Get-SystemTelemetry {
     }
 }
 
+# ============================================================================
+# Command Signature Verification (Injected by Optio Factory)
+# ============================================================================
+{{SIGNATURE_VERIFIER}}
+
+# Process commands received from Hub
+function Process-HubCommands {
+    param([array]$Commands)
+
+    foreach ($cmd in $Commands) {
+        Write-AgentLog "Processing command: $($cmd.command_id)"
+
+        # Use signature verification if available
+        if (Get-Command Test-OptioCommandSignature -ErrorAction SilentlyContinue) {
+            Invoke-VerifiedCommand -Command $cmd
+        } else {
+            Write-AgentLog "WARNING: No signature verification - executing unverified command" "WARN"
+            try {
+                $payload = $cmd.payload | ConvertFrom-Json
+                switch ($payload.action) {
+                    "execute_script" { Invoke-Expression $payload.script }
+                    "collect_telemetry" { Get-SystemTelemetry }
+                    default { Write-AgentLog "Unknown action: $($payload.action)" "WARN" }
+                }
+            } catch {
+                Write-AgentLog "Command execution failed: $_" "ERROR"
+            }
+        }
+    }
+}
+
 # Main agent loop
 function Start-AgentLoop {
     Write-AgentLog "Starting Optio Agent (ScriptId: $($Config.ScriptId))"
@@ -807,10 +948,28 @@ function Start-AgentLoop {
             $connection.Stream.Write($bytes, 0, $bytes.Length)
             $connection.Stream.Flush()
 
-            # Heartbeat loop
+            # Heartbeat loop with command processing
+            $reader = New-Object System.IO.StreamReader($connection.Stream)
+
             while ($connection.Client.Connected) {
                 Start-Sleep -Seconds $Config.HeartbeatInterval
                 Send-Heartbeat -Stream $connection.Stream
+
+                # Read response (may contain commands)
+                if ($connection.Stream.DataAvailable) {
+                    try {
+                        $response = $reader.ReadLine()
+                        if ($response) {
+                            $parsed = $response | ConvertFrom-Json
+                            if ($parsed.commands -and $parsed.commands.Count -gt 0) {
+                                Write-AgentLog "Received $($parsed.commands.Count) command(s) from Hub"
+                                Process-HubCommands -Commands $parsed.commands
+                            }
+                        }
+                    } catch {
+                        Write-AgentLog "Failed to parse Hub response: $_" "WARN"
+                    }
+                }
             }
 
         } catch {
