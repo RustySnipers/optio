@@ -1108,3 +1108,36 @@ export interface ErrorResponse {
   message: string;
   details?: string;
 }
+
+// ============================================================================
+// Agent Types (Alpha - mTLS & Heartbeat)
+// ============================================================================
+
+export type AgentStatus = "online" | "offline" | "unknown" | "error";
+
+export interface Agent {
+  machineId: string;
+  hostname: string;
+  osInfo: string | null;
+  cpuUsage: number;
+  ramUsage: number;
+  ramTotal: number;
+  diskFree: number;
+  diskTotal: number;
+  uptimeSeconds: number;
+  ipAddresses: string | null;
+  agentVersion: string | null;
+  firstSeen: string;
+  lastSeen: string;
+  status: AgentStatus;
+  clientId: string | null;
+  tags: string | null;
+  notes: string | null;
+}
+
+export interface AgentStats {
+  total: number;
+  online: number;
+  offline: number;
+  unknown: number;
+}

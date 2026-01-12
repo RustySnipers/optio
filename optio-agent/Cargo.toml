@@ -2,7 +2,38 @@
 name = "optio-agent"
 version = "0.1.0"
 edition = "2021"
+description = "Lightweight agent for the Optio Enterprise IT Management Platform"
+
+[[bin]]
+name = "optio-agent"
+path = "src/main.rs"
 
 [dependencies]
 optio-core = { path = "../optio-core" }
 tokio = { workspace = true }
+tonic = { workspace = true }
+
+# System information gathering
+sysinfo = "0.32"
+hostname = "0.4"
+
+# Async utilities
+futures = "0.3"
+
+# Serialization
+serde = { workspace = true }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# UUID for machine ID
+uuid = { version = "1", features = ["v4", "v5"] }
+
+# Base64 encoding for scripts
+base64 = "0.22"
