@@ -143,11 +143,11 @@ impl<'a> AssessmentRepository<'a> {
                FROM assessments WHERE client_id = ?1 ORDER BY started_at DESC"#
         )?;
 
-        let assessments = stmt.query_map(params![client_id], |row| {
-            Ok(parse_assessment_row(row).unwrap())
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        let mut assessments = Vec::new();
+        let mut rows = stmt.query(params![client_id])?;
+        while let Some(row) = rows.next()? {
+            assessments.push(parse_assessment_row(row)?);
+        }
 
         Ok(assessments)
     }
@@ -161,11 +161,11 @@ impl<'a> AssessmentRepository<'a> {
                FROM assessments ORDER BY started_at DESC"#
         )?;
 
-        let assessments = stmt.query_map([], |row| {
-            Ok(parse_assessment_row(row).unwrap())
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        let mut assessments = Vec::new();
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            assessments.push(parse_assessment_row(row)?);
+        }
 
         Ok(assessments)
     }
@@ -248,11 +248,11 @@ impl<'a> ControlAssessmentRepository<'a> {
                FROM control_assessments WHERE assessment_id = ?1"#
         )?;
 
-        let assessments = stmt.query_map(params![assessment_id], |row| {
-            Ok(parse_control_assessment_row(row).unwrap())
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        let mut assessments = Vec::new();
+        let mut rows = stmt.query(params![assessment_id])?;
+        while let Some(row) = rows.next()? {
+            assessments.push(parse_control_assessment_row(row)?);
+        }
 
         Ok(assessments)
     }
@@ -329,11 +329,11 @@ impl<'a> EvidenceRepository<'a> {
                FROM evidence WHERE assessment_id = ?1 ORDER BY collected_at DESC"#
         )?;
 
-        let evidence_list: Vec<Evidence> = stmt.query_map(params![assessment_id], |row| {
-            Ok(parse_evidence_row(row, vec![]).unwrap())
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+        let mut evidence_list: Vec<Evidence> = Vec::new();
+        let mut rows = stmt.query(params![assessment_id])?;
+        while let Some(row) = rows.next()? {
+            evidence_list.push(parse_evidence_row(row, vec![])?);
+        }
 
         // Load control mappings
         let mut result = Vec::new();

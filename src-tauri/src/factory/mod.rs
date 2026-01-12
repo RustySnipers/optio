@@ -91,12 +91,13 @@ impl ScriptGenerator {
         };
 
         // Build variable map for substitution
+        let script_id = Uuid::new_v4().to_string();
         let mut vars = HashMap::new();
         vars.insert("CLIENT_ID", config.client_id.clone());
         vars.insert("CLIENT_NAME", config.client_name.clone());
         vars.insert("TARGET_SUBNET", config.target_subnet.clone());
         vars.insert("CONSULTANT_IP", config.consultant_ip.clone());
-        vars.insert("SCRIPT_ID", Uuid::new_v4().to_string());
+        vars.insert("SCRIPT_ID", script_id.clone());
         vars.insert("GENERATED_AT", Utc::now().to_rfc3339());
         vars.insert("ENABLE_WINRM", config.enable_winrm.to_string());
         vars.insert("CONFIGURE_DNS", config.configure_dns.to_string());
@@ -133,7 +134,7 @@ impl ScriptGenerator {
         }
 
         Ok(GeneratedScript {
-            script_id: vars.get("SCRIPT_ID").unwrap().clone(),
+            script_id,
             content,
             generated_at: Utc::now(),
             warnings,
@@ -607,13 +608,14 @@ pub fn generate_agent_script(config: &AgentScriptConfig) -> OptioResult<Generate
     }
 
     // Build variable map for substitution
+    let script_id = Uuid::new_v4().to_string();
     let mut vars = HashMap::new();
     vars.insert("CLIENT_IP", config.client_ip.clone());
     vars.insert("AUTH_TOKEN", config.auth_token.clone());
     vars.insert("CALLBACK_PORT", config.callback_port.to_string());
     vars.insert("USE_TLS", if config.use_tls { "true" } else { "false" }.to_string());
     vars.insert("HEARTBEAT_INTERVAL", config.heartbeat_interval.to_string());
-    vars.insert("SCRIPT_ID", Uuid::new_v4().to_string());
+    vars.insert("SCRIPT_ID", script_id.clone());
     vars.insert("GENERATED_AT", Utc::now().to_rfc3339());
 
     // Perform template substitution
@@ -633,7 +635,7 @@ pub fn generate_agent_script(config: &AgentScriptConfig) -> OptioResult<Generate
     }
 
     Ok(GeneratedScript {
-        script_id: vars.get("SCRIPT_ID").unwrap().clone(),
+        script_id,
         content,
         generated_at: Utc::now(),
         warnings,
