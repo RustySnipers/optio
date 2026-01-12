@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+  "optio-core",
+  "optio-hub",
+  "optio-agent",
+]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+tonic = "0.10"
+prost = "0.12"

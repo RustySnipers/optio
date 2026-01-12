@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package optio;
+
+service HeartbeatService {
+  rpc SendHeartbeat(Heartbeat) returns (HeartbeatResponse);
+}
+
+message Heartbeat {
+  string machine_id = 1;
+  string hostname = 2;
+  string os_info = 3;
+  uint64 timestamp = 4;
+  Status status = 5;
+
+  enum Status {
+    ONLINE = 0;
+    BUSY = 1;
+    ERROR = 2;
+  }
+}
+
+message HeartbeatResponse {
+  bool accepted = 1;
+}

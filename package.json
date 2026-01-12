@@ -11,8 +11,8 @@
     "tauri:build": "tauri build",
     "install:all": "npm install && cd frontend && npm install",
     "lint": "cd frontend && npm run lint",
-    "test:rust": "cd src-tauri && cargo test",
-    "check:rust": "cd src-tauri && cargo check"
+    "test:rust": "cd optio-hub && cargo test",
+    "check:rust": "cd optio-hub && cargo check"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0"
