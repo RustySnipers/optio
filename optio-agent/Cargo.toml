@@ -1,0 +1,10 @@
+[package]
+name = "optio-agent"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+optio-core = { path = "../optio-core" }
+tokio = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
