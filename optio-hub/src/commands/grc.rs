@@ -3,7 +3,7 @@
 //! Tauri commands for GRC (Governance, Risk, Compliance) operations.
 
 use crate::db::Database;
-use crate::grc::{
+use optio_core::grc::{
     models::*,
     frameworks::{get_framework_controls, get_available_frameworks, get_framework_categories, FrameworkInfo, CategoryInfo},
     repository::{AssessmentRepository, ControlAssessmentRepository, EvidenceRepository},
@@ -68,7 +68,7 @@ pub async fn create_assessment(
         status: AssessmentStatus::Draft,
     };
 
-    let repo = AssessmentRepository::new(&db);
+    let repo = AssessmentRepository::new(&db.conn);
     repo.create(&assessment).map_err(|e| e.to_string())?;
 
     Ok(assessment)
@@ -80,7 +80,7 @@ pub async fn get_assessment(
     db: State<'_, Database>,
     id: String,
 ) -> Result<Option<Assessment>, String> {
-    let repo = AssessmentRepository::new(&db);
+    let repo = AssessmentRepository::new(&db.conn);
     repo.get(&id).map_err(|e| e.to_string())
 }
 
@@ -90,7 +90,7 @@ pub async fn list_client_assessments(
     db: State<'_, Database>,
     client_id: String,
 ) -> Result<Vec<Assessment>, String> {
-    let repo = AssessmentRepository::new(&db);
+    let repo = AssessmentRepository::new(&db.conn);
     repo.list_by_client(&client_id).map_err(|e| e.to_string())
 }
 
@@ -99,7 +99,7 @@ pub async fn list_client_assessments(
 pub async fn list_assessments(
     db: State<'_, Database>,
 ) -> Result<Vec<Assessment>, String> {
-    let repo = AssessmentRepository::new(&db);
+    let repo = AssessmentRepository::new(&db.conn);
     repo.list_all().map_err(|e| e.to_string())
 }
 
@@ -111,7 +111,7 @@ pub async fn update_assessment_status(
     status: String,
 ) -> Result<bool, String> {
     let status = parse_assessment_status_param(&status)?;
-    let repo = AssessmentRepository::new(&db);
+    let repo = AssessmentRepository::new(&db.conn);
     repo.update_status(&id, status).map_err(|e| e.to_string())
 }
 
@@ -121,7 +121,7 @@ pub async fn delete_assessment(
     db: State<'_, Database>,
     id: String,
 ) -> Result<bool, String> {
-    let repo = AssessmentRepository::new(&db);
+    let repo = AssessmentRepository::new(&db.conn);
     repo.delete(&id).map_err(|e| e.to_string())
 }
 
@@ -173,7 +173,7 @@ pub async fn update_control_assessment(
         assessed_by: request.assessed_by,
     };
 
-    let repo = ControlAssessmentRepository::new(&db);
+    let repo = ControlAssessmentRepository::new(&db.conn);
     repo.upsert(&ca).map_err(|e| e.to_string())?;
 
     Ok(ca)
@@ -185,7 +185,7 @@ pub async fn get_control_assessments(
     db: State<'_, Database>,
     assessment_id: String,
 ) -> Result<Vec<ControlAssessment>, String> {
-    let repo = ControlAssessmentRepository::new(&db);
+    let repo = ControlAssessmentRepository::new(&db.conn);
     repo.get_by_assessment(&assessment_id).map_err(|e| e.to_string())
 }
 
@@ -206,7 +206,7 @@ pub async fn batch_update_controls(
     request: BatchUpdateControlsRequest,
 ) -> Result<usize, String> {
     let status = parse_compliance_status_param(&request.status)?;
-    let repo = ControlAssessmentRepository::new(&db);
+    let repo = ControlAssessmentRepository::new(&db.conn);
 
     let mut updated = 0;
     for control_id in &request.control_ids {
@@ -273,7 +273,7 @@ pub async fn create_evidence(
         notes: request.notes,
     };
 
-    let repo = EvidenceRepository::new(&db);
+    let repo = EvidenceRepository::new(&db.conn);
     repo.create(&evidence).map_err(|e| e.to_string())?;
 
     Ok(evidence)
@@ -285,7 +285,7 @@ pub async fn get_assessment_evidence(
     db: State<'_, Database>,
     assessment_id: String,
 ) -> Result<Vec<Evidence>, String> {
-    let repo = EvidenceRepository::new(&db);
+    let repo = EvidenceRepository::new(&db.conn);
     repo.get_by_assessment(&assessment_id).map_err(|e| e.to_string())
 }
 
@@ -295,7 +295,7 @@ pub async fn delete_evidence(
     db: State<'_, Database>,
     id: String,
 ) -> Result<bool, String> {
-    let repo = EvidenceRepository::new(&db);
+    let repo = EvidenceRepository::new(&db.conn);
     repo.delete(&id).map_err(|e| e.to_string())
 }
 
@@ -309,17 +309,17 @@ pub async fn get_assessment_summary(
     db: State<'_, Database>,
     assessment_id: String,
 ) -> Result<AssessmentSummary, String> {
-    let assessment_repo = AssessmentRepository::new(&db);
+    let assessment_repo = AssessmentRepository::new(&db.conn);
     let assessment = assessment_repo
         .get(&assessment_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "Assessment not found".to_string())?;
 
     let controls = get_framework_controls(assessment.framework);
-    let control_repo = ControlAssessmentRepository::new(&db);
+    let control_repo = ControlAssessmentRepository::new(&db.conn);
     let assessments = control_repo.get_by_assessment(&assessment_id).map_err(|e| e.to_string())?;
 
-    let evidence_repo = EvidenceRepository::new(&db);
+    let evidence_repo = EvidenceRepository::new(&db.conn);
     let evidence_count = evidence_repo.count_by_assessment(&assessment_id).map_err(|e| e.to_string())?;
 
     // Build assessment map
@@ -449,8 +449,8 @@ pub async fn get_compliance_status(
     let categories = get_framework_categories(fw);
 
     // Get all assessments for this framework
-    let assessment_repo = AssessmentRepository::new(&db);
-    let control_repo = ControlAssessmentRepository::new(&db);
+    let assessment_repo = AssessmentRepository::new(&db.conn);
+    let control_repo = ControlAssessmentRepository::new(&db.conn);
 
     let assessments = if let Some(ref cid) = client_id {
         assessment_repo.list_by_client(cid).map_err(|e| e.to_string())?

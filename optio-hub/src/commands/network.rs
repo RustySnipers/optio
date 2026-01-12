@@ -2,7 +2,7 @@
 //!
 //! Tauri commands for network scanning and asset inventory management.
 
-use crate::network::{
+use optio_core::network::{
     models::*,
     scanner::{
         check_nmap_installed, get_scan_types, build_nmap_command, validate_target,
@@ -267,12 +267,12 @@ pub async fn scan_single_host(
 
     let ports = ports.unwrap_or_else(|| DEFAULT_SCAN_PORTS.to_vec());
 
-    let config = crate::network::scanner::TcpScannerConfig {
+    let config = optio_core::network::scanner::TcpScannerConfig {
         ports,
         ..Default::default()
     };
 
-    let scanner = crate::network::scanner::TcpScanner::with_config(config);
+    let scanner = optio_core::network::scanner::TcpScanner::with_config(config);
     scanner.scan_single_host(&ip).await
 }
 
