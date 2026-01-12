@@ -35,6 +35,9 @@ pub enum OptioError {
 
     #[error("Network scan error: {0}")]
     NetworkScan(String),
+
+    #[error("Cryptographic operation failed: {0}")]
+    Crypto(String),
 }
 
 /// Serializable error response for frontend
@@ -58,6 +61,7 @@ impl From<OptioError> for ErrorResponse {
             OptioError::Encryption(_) => "ENCRYPTION_ERROR",
             OptioError::Validation(_) => "VALIDATION_ERROR",
             OptioError::NetworkScan(_) => "NETWORK_SCAN_ERROR",
+            OptioError::Crypto(_) => "CRYPTO_ERROR",
         };
 
         ErrorResponse {

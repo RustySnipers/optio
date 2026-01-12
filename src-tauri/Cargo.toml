@@ -29,6 +29,9 @@ chrono = { version = "0.4", features = ["serde"] }
 rusqlite = { version = "0.34", features = ["bundled"] }
 aes-gcm = "0.10"
 rand = "0.8"
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+sha2 = "0.10"
+hex = "0.4"
 base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

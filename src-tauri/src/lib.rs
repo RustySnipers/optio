@@ -4,13 +4,14 @@
 //! and IT Security Consultants.
 
 pub mod commands;
+pub mod crypto;
+pub mod db;
+pub mod error;
 pub mod factory;
 pub mod grc;
 pub mod infrastructure;
 pub mod network;
 pub mod reporting;
-pub mod error;
-pub mod db;
 
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -32,6 +33,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .manage(commands::crypto::CryptoState::default())
         .manage(commands::network::NetworkState::default())
         .manage(commands::reporting::ReportingState::default())
         .setup(|app| {
@@ -140,6 +142,13 @@ pub fn run() {
             commands::reporting::generate_executive_pdf,
             commands::reporting::generate_demo_pdf,
             commands::reporting::open_pdf_location,
+            // Crypto commands (Hub signing)
+            commands::crypto::generate_signing_keypair,
+            commands::crypto::get_public_key,
+            commands::crypto::sign_command,
+            commands::crypto::generate_agent_verifier,
+            commands::crypto::export_keypair,
+            commands::crypto::import_keypair,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
