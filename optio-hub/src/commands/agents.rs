@@ -2,7 +2,7 @@
 //!
 //! Commands for managing and querying connected optio-agent instances.
 
-use crate::db::{Agent, AgentRepository, AgentStatus, Database};
+use crate::db::{Agent, AgentRepository, AgentStatus, Database, TelemetryRecord, TelemetryRepository, TelemetryStats};
 use crate::error::{ErrorResponse, OptioResult};
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -75,4 +75,40 @@ pub async fn delete_agent(
 pub async fn refresh_agent_status(db: State<'_, Database>) -> Result<usize, ErrorResponse> {
     let repo = AgentRepository::new(&db);
     repo.mark_stale_agents_offline().map_err(Into::into)
+}
+
+// ============================================================================
+// Telemetry History Commands
+// ============================================================================
+
+/// Get telemetry history for an agent
+#[tauri::command]
+pub async fn get_agent_history(
+    agent_id: String,
+    limit: Option<u32>,
+    db: State<'_, Database>,
+) -> Result<Vec<TelemetryRecord>, ErrorResponse> {
+    let repo = TelemetryRepository::new(&db);
+    repo.get_history(&agent_id, limit.unwrap_or(100)).map_err(Into::into)
+}
+
+/// Get telemetry statistics for an agent
+#[tauri::command]
+pub async fn get_agent_telemetry_stats(
+    agent_id: String,
+    hours: Option<i64>,
+    db: State<'_, Database>,
+) -> Result<TelemetryStats, ErrorResponse> {
+    let repo = TelemetryRepository::new(&db);
+    repo.get_stats(&agent_id, hours.unwrap_or(24)).map_err(Into::into)
+}
+
+/// Cleanup old telemetry records
+#[tauri::command]
+pub async fn cleanup_telemetry(
+    days_to_keep: Option<i64>,
+    db: State<'_, Database>,
+) -> Result<usize, ErrorResponse> {
+    let repo = TelemetryRepository::new(&db);
+    repo.cleanup_old_records(days_to_keep.unwrap_or(30)).map_err(Into::into)
 }

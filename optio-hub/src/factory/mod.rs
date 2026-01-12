@@ -3,6 +3,10 @@
 //! "The Factory" is Optio's dynamic script generation engine. Instead of static
 //! downloads, it manufactures unique, state-aware PowerShell scripts for each
 //! engagement with identity injection and idempotent operations.
+//!
+//! Also includes the Installer Generator for creating deployment packages.
+
+pub mod installer;
 
 use crate::error::{OptioError, OptioResult};
 use chrono::{DateTime, Utc};

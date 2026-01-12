@@ -57,6 +57,7 @@ pub fn run() {
             commands::factory::get_script_preview,
             commands::factory::validate_config,
             commands::factory::generate_agent_script,
+            commands::factory::generate_agent_installer,
             // Client management commands
             commands::clients::create_client,
             commands::clients::list_clients,
@@ -146,6 +147,10 @@ pub fn run() {
             commands::agents::get_agent_stats,
             commands::agents::delete_agent,
             commands::agents::refresh_agent_status,
+            // Agent telemetry history commands
+            commands::agents::get_agent_history,
+            commands::agents::get_agent_telemetry_stats,
+            commands::agents::cleanup_telemetry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,9 +6,17 @@
 //! - Reports command results back to the Hub
 //!
 //! Communication is outbound-only (agent "phones home") using mTLS.
+//!
+//! # Running Modes
+//!
+//! - Console: `optio-agent` or `optio-agent --console`
+//! - Windows Service: `optio-agent --service`
+//! - Install Service: `optio-agent --install`
+//! - Uninstall Service: `optio-agent --uninstall`
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use clap::Parser;
 use optio_core::proto::collector_client::CollectorClient;
 use optio_core::proto::{ExecuteScriptResponse, HeartbeatRequest, PendingCommand};
 use serde::{Deserialize, Serialize};
@@ -36,6 +44,41 @@ const DEFAULT_COMMAND_TIMEOUT: u64 = 300;
 /// Namespace UUID for machine ID generation (using a fixed UUID5 namespace)
 const MACHINE_ID_NAMESPACE: Uuid = Uuid::from_u128(0x6ba7b810_9dad_11d1_80b4_00c04fd430c8);
 
+/// Service name for Windows SCM
+const SERVICE_NAME: &str = "OptioAgent";
+
+// ============================================================================
+// Command Line Arguments
+// ============================================================================
+
+#[derive(Parser, Debug)]
+#[command(name = "optio-agent", about = "Optio Agent - Endpoint sentinel for IT orchestration")]
+struct Args {
+    /// Run as a Windows service (called by SCM)
+    #[arg(long)]
+    service: bool,
+
+    /// Install as a Windows service
+    #[arg(long)]
+    install: bool,
+
+    /// Uninstall the Windows service
+    #[arg(long)]
+    uninstall: bool,
+
+    /// Run in console mode (default)
+    #[arg(long)]
+    console: bool,
+
+    /// Path to configuration file
+    #[arg(long, short, default_value = "config.toml")]
+    config: PathBuf,
+
+    /// Show status and exit
+    #[arg(long)]
+    status: bool,
+}
+
 // ============================================================================
 // Error Types
 // ============================================================================
@@ -59,70 +102,206 @@ pub enum AgentError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Configuration error: {0}")]
+    Config(String),
 }
 
 // ============================================================================
 // Agent Configuration
 // ============================================================================
 
-/// Agent configuration loaded from environment or config file
+/// Agent configuration loaded from file or environment
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentConfig {
+    /// Agent section
+    #[serde(default)]
+    pub agent: AgentSection,
+
+    /// TLS configuration section
+    #[serde(default)]
+    pub tls: TlsSection,
+
+    /// Logging configuration section
+    #[serde(default)]
+    pub logging: LoggingSection,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentSection {
+    /// Unique agent identifier
+    #[serde(default)]
+    pub id: Option<String>,
+
     /// Hub server address (e.g., "https://192.168.1.100:50051")
+    #[serde(default = "default_hub_address")]
     pub hub_address: String,
+
+    /// Heartbeat interval in seconds
+    #[serde(default = "default_heartbeat_interval")]
+    pub heartbeat_interval: u64,
+
+    /// Command execution timeout in seconds
+    #[serde(default = "default_command_timeout")]
+    pub command_timeout: u64,
+}
+
+impl Default for AgentSection {
+    fn default() -> Self {
+        Self {
+            id: None,
+            hub_address: default_hub_address(),
+            heartbeat_interval: default_heartbeat_interval(),
+            command_timeout: default_command_timeout(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TlsSection {
+    /// Path to CA certificate PEM
+    pub ca_path: Option<PathBuf>,
 
     /// Path to client certificate PEM
     pub cert_path: Option<PathBuf>,
 
     /// Path to client private key PEM
     pub key_path: Option<PathBuf>,
+}
 
-    /// Path to CA certificate PEM
-    pub ca_path: Option<PathBuf>,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingSection {
+    /// Log level
+    #[serde(default = "default_log_level")]
+    pub level: String,
 
-    /// Heartbeat interval in seconds
-    pub heartbeat_interval: u64,
+    /// Log to Windows Event Log when running as service
+    #[serde(default)]
+    pub event_log: bool,
+}
 
-    /// Command execution timeout in seconds
-    pub command_timeout: u64,
+impl Default for LoggingSection {
+    fn default() -> Self {
+        Self {
+            level: default_log_level(),
+            event_log: false,
+        }
+    }
+}
+
+fn default_hub_address() -> String {
+    "http://127.0.0.1:50051".to_string()
+}
+
+fn default_heartbeat_interval() -> u64 {
+    DEFAULT_HEARTBEAT_INTERVAL
+}
+
+fn default_command_timeout() -> u64 {
+    DEFAULT_COMMAND_TIMEOUT
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 impl Default for AgentConfig {
     fn default() -> Self {
         Self {
-            hub_address: "http://127.0.0.1:50051".to_string(),
-            cert_path: None,
-            key_path: None,
-            ca_path: None,
-            heartbeat_interval: DEFAULT_HEARTBEAT_INTERVAL,
-            command_timeout: DEFAULT_COMMAND_TIMEOUT,
+            agent: AgentSection::default(),
+            tls: TlsSection::default(),
+            logging: LoggingSection::default(),
         }
     }
 }
 
 impl AgentConfig {
+    /// Load configuration from file
+    pub fn from_file(path: &PathBuf) -> Result<Self, AgentError> {
+        if !path.exists() {
+            info!("Config file not found at {:?}, using defaults", path);
+            return Ok(Self::from_env());
+        }
+
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| AgentError::Config(format!("Failed to read config: {}", e)))?;
+
+        let config: AgentConfig = toml::from_str(&content)
+            .map_err(|e| AgentError::Config(format!("Failed to parse config: {}", e)))?;
+
+        // Override with environment variables if set
+        Ok(config.with_env_overrides())
+    }
+
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
         Self {
-            hub_address: std::env::var("OPTIO_HUB_ADDRESS")
-                .unwrap_or_else(|_| "http://127.0.0.1:50051".to_string()),
-            cert_path: std::env::var("OPTIO_CERT_PATH").ok().map(PathBuf::from),
-            key_path: std::env::var("OPTIO_KEY_PATH").ok().map(PathBuf::from),
-            ca_path: std::env::var("OPTIO_CA_PATH").ok().map(PathBuf::from),
-            heartbeat_interval: std::env::var("OPTIO_HEARTBEAT_INTERVAL")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL),
-            command_timeout: std::env::var("OPTIO_COMMAND_TIMEOUT")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(DEFAULT_COMMAND_TIMEOUT),
+            agent: AgentSection {
+                id: std::env::var("OPTIO_AGENT_ID").ok(),
+                hub_address: std::env::var("OPTIO_HUB_ADDRESS")
+                    .unwrap_or_else(|_| default_hub_address()),
+                heartbeat_interval: std::env::var("OPTIO_HEARTBEAT_INTERVAL")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(DEFAULT_HEARTBEAT_INTERVAL),
+                command_timeout: std::env::var("OPTIO_COMMAND_TIMEOUT")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(DEFAULT_COMMAND_TIMEOUT),
+            },
+            tls: TlsSection {
+                cert_path: std::env::var("OPTIO_CERT_PATH").ok().map(PathBuf::from),
+                key_path: std::env::var("OPTIO_KEY_PATH").ok().map(PathBuf::from),
+                ca_path: std::env::var("OPTIO_CA_PATH").ok().map(PathBuf::from),
+            },
+            logging: LoggingSection::default(),
         }
+    }
+
+    /// Apply environment variable overrides
+    fn with_env_overrides(mut self) -> Self {
+        if let Ok(addr) = std::env::var("OPTIO_HUB_ADDRESS") {
+            self.agent.hub_address = addr;
+        }
+        if let Ok(interval) = std::env::var("OPTIO_HEARTBEAT_INTERVAL") {
+            if let Ok(val) = interval.parse() {
+                self.agent.heartbeat_interval = val;
+            }
+        }
+        if let Ok(path) = std::env::var("OPTIO_CERT_PATH") {
+            self.tls.cert_path = Some(PathBuf::from(path));
+        }
+        if let Ok(path) = std::env::var("OPTIO_KEY_PATH") {
+            self.tls.key_path = Some(PathBuf::from(path));
+        }
+        if let Ok(path) = std::env::var("OPTIO_CA_PATH") {
+            self.tls.ca_path = Some(PathBuf::from(path));
+        }
+        self
     }
 
     /// Check if mTLS is configured
     pub fn has_mtls(&self) -> bool {
-        self.cert_path.is_some() && self.key_path.is_some() && self.ca_path.is_some()
+        self.tls.cert_path.is_some() && self.tls.key_path.is_some() && self.tls.ca_path.is_some()
+    }
+
+    /// Resolve paths relative to config file location
+    pub fn resolve_paths(&mut self, config_dir: &PathBuf) {
+        if let Some(ref path) = self.tls.ca_path {
+            if path.is_relative() {
+                self.tls.ca_path = Some(config_dir.join(path));
+            }
+        }
+        if let Some(ref path) = self.tls.cert_path {
+            if path.is_relative() {
+                self.tls.cert_path = Some(config_dir.join(path));
+            }
+        }
+        if let Some(ref path) = self.tls.key_path {
+            if path.is_relative() {
+                self.tls.key_path = Some(config_dir.join(path));
+            }
+        }
     }
 }
 
@@ -167,6 +346,12 @@ impl SystemCollector {
             os_info,
             start_time: Instant::now(),
         }
+    }
+
+    /// Use a specific agent ID instead of auto-generated
+    pub fn with_agent_id(mut self, id: String) -> Self {
+        self.machine_id = id;
+        self
     }
 
     /// Refresh system metrics
@@ -216,7 +401,6 @@ impl SystemCollector {
     /// Get local IP addresses
     pub fn ip_addresses(&self) -> String {
         // Simple approach - get from network interfaces via hostname
-        // In production, iterate over network interfaces
         local_ip_address::local_ip()
             .map(|ip| ip.to_string())
             .unwrap_or_else(|_| "127.0.0.1".to_string())
@@ -252,12 +436,11 @@ impl SystemCollector {
     }
 }
 
-// Simple local IP detection - fallback if local_ip_address crate is not available
+// Simple local IP detection
 mod local_ip_address {
     use std::net::IpAddr;
 
     pub fn local_ip() -> Result<IpAddr, std::io::Error> {
-        // Try to connect to a public DNS and get our local IP
         use std::net::UdpSocket;
         let socket = UdpSocket::bind("0.0.0.0:0")?;
         socket.connect("8.8.8.8:80")?;
@@ -556,10 +739,16 @@ pub struct Agent {
 
 impl Agent {
     pub fn new(config: AgentConfig) -> Self {
-        let collector = SystemCollector::new();
+        let mut collector = SystemCollector::new();
+
+        // Use configured agent ID if provided
+        if let Some(ref id) = config.agent.id {
+            collector = collector.with_agent_id(id.clone());
+        }
+
         let executor = CommandExecutor::new(
             collector.machine_id().to_string(),
-            config.command_timeout,
+            config.agent.command_timeout,
         );
 
         Self {
@@ -582,7 +771,7 @@ impl Agent {
         let mut client = self.connect().await?;
 
         // Main heartbeat loop
-        let mut heartbeat_interval = interval(Duration::from_secs(self.config.heartbeat_interval));
+        let mut heartbeat_interval = interval(Duration::from_secs(self.config.agent.heartbeat_interval));
 
         loop {
             heartbeat_interval.tick().await;
@@ -626,16 +815,245 @@ impl Agent {
     async fn connect(&self) -> Result<HubClient> {
         if self.config.has_mtls() {
             HubClient::connect_mtls(
-                &self.config.hub_address,
-                self.config.cert_path.as_ref().expect("checked"),
-                self.config.key_path.as_ref().expect("checked"),
-                self.config.ca_path.as_ref().expect("checked"),
+                &self.config.agent.hub_address,
+                self.config.tls.cert_path.as_ref().expect("checked"),
+                self.config.tls.key_path.as_ref().expect("checked"),
+                self.config.tls.ca_path.as_ref().expect("checked"),
             )
             .await
         } else {
             warn!("Connecting without mTLS - development mode only!");
-            HubClient::connect(&self.config.hub_address).await
+            HubClient::connect(&self.config.agent.hub_address).await
         }
+    }
+}
+
+// ============================================================================
+// Windows Service Support
+// ============================================================================
+
+#[cfg(windows)]
+mod windows_service_impl {
+    use super::*;
+    use std::ffi::OsString;
+    use std::time::Duration;
+    use windows_service::{
+        define_windows_service,
+        service::{
+            ServiceControl, ServiceControlAccept, ServiceExitCode, ServiceState, ServiceStatus,
+            ServiceType,
+        },
+        service_control_handler::{self, ServiceControlHandlerResult},
+        service_dispatcher,
+    };
+
+    const SERVICE_TYPE: ServiceType = ServiceType::OWN_PROCESS;
+
+    define_windows_service!(ffi_service_main, service_main);
+
+    /// Entry point for service mode
+    pub fn run_as_service() -> windows_service::Result<()> {
+        service_dispatcher::start(SERVICE_NAME, ffi_service_main)?;
+        Ok(())
+    }
+
+    /// Service main function called by SCM
+    fn service_main(arguments: Vec<OsString>) {
+        if let Err(e) = run_service(arguments) {
+            error!("Service error: {}", e);
+        }
+    }
+
+    fn run_service(_arguments: Vec<OsString>) -> windows_service::Result<()> {
+        // Create a channel to receive stop events
+        let (shutdown_tx, shutdown_rx) = std::sync::mpsc::channel();
+
+        // Register the service control handler
+        let status_handle = service_control_handler::register(SERVICE_NAME, move |control_event| {
+            match control_event {
+                ServiceControl::Stop => {
+                    let _ = shutdown_tx.send(());
+                    ServiceControlHandlerResult::NoError
+                }
+                ServiceControl::Interrogate => ServiceControlHandlerResult::NoError,
+                _ => ServiceControlHandlerResult::NotImplemented,
+            }
+        })?;
+
+        // Set service status to Running
+        status_handle.set_service_status(ServiceStatus {
+            service_type: SERVICE_TYPE,
+            current_state: ServiceState::Running,
+            controls_accepted: ServiceControlAccept::STOP,
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: Duration::default(),
+            process_id: None,
+        })?;
+
+        // Create the tokio runtime on a background thread
+        let service_thread = std::thread::spawn(move || {
+            // Build the runtime
+            let runtime = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+
+            // Load configuration
+            let config_path = get_service_config_path();
+            let config = match AgentConfig::from_file(&config_path) {
+                Ok(mut c) => {
+                    if let Some(parent) = config_path.parent() {
+                        c.resolve_paths(&parent.to_path_buf());
+                    }
+                    c
+                }
+                Err(e) => {
+                    error!("Failed to load config: {}", e);
+                    return;
+                }
+            };
+
+            // Run the agent
+            runtime.block_on(async {
+                let mut agent = Agent::new(config);
+
+                tokio::select! {
+                    result = agent.run() => {
+                        if let Err(e) = result {
+                            error!("Agent error: {}", e);
+                        }
+                    }
+                    _ = wait_for_shutdown(&shutdown_rx) => {
+                        info!("Received shutdown signal");
+                    }
+                }
+            });
+        });
+
+        // Wait for the service to stop
+        let _ = service_thread.join();
+
+        // Set service status to Stopped
+        status_handle.set_service_status(ServiceStatus {
+            service_type: SERVICE_TYPE,
+            current_state: ServiceState::Stopped,
+            controls_accepted: ServiceControlAccept::empty(),
+            exit_code: ServiceExitCode::Win32(0),
+            checkpoint: 0,
+            wait_hint: Duration::default(),
+            process_id: None,
+        })?;
+
+        Ok(())
+    }
+
+    async fn wait_for_shutdown(rx: &std::sync::mpsc::Receiver<()>) {
+        loop {
+            if rx.try_recv().is_ok() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
+
+    fn get_service_config_path() -> PathBuf {
+        // Default to Program Files installation path
+        PathBuf::from(r"C:\Program Files\Optio\config.toml")
+    }
+
+    /// Install the Windows service
+    pub fn install_service(config_path: &PathBuf) -> Result<()> {
+        use std::process::Command;
+
+        let exe_path = std::env::current_exe()?;
+
+        // Build the command line with --service and --config flags
+        let bin_path = format!(
+            "\"{}\" --service --config \"{}\"",
+            exe_path.display(),
+            config_path.display()
+        );
+
+        info!("Installing service with: {}", bin_path);
+
+        // Use sc.exe to create the service
+        let output = Command::new("sc.exe")
+            .args([
+                "create",
+                SERVICE_NAME,
+                &format!("binPath= {}", bin_path),
+                "start= auto",
+                "DisplayName= Optio Agent",
+            ])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to create service: {}", stderr);
+        }
+
+        // Set description
+        let _ = Command::new("sc.exe")
+            .args([
+                "description",
+                SERVICE_NAME,
+                "Optio endpoint management agent for secure IT orchestration",
+            ])
+            .output();
+
+        // Configure recovery (restart on failure)
+        let _ = Command::new("sc.exe")
+            .args([
+                "failure",
+                SERVICE_NAME,
+                "reset= 86400",
+                "actions= restart/5000/restart/10000/restart/30000",
+            ])
+            .output();
+
+        info!("Service installed successfully");
+        Ok(())
+    }
+
+    /// Uninstall the Windows service
+    pub fn uninstall_service() -> Result<()> {
+        use std::process::Command;
+
+        // Stop the service first
+        let _ = Command::new("sc.exe")
+            .args(["stop", SERVICE_NAME])
+            .output();
+
+        // Wait a moment for it to stop
+        std::thread::sleep(Duration::from_secs(2));
+
+        // Delete the service
+        let output = Command::new("sc.exe")
+            .args(["delete", SERVICE_NAME])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to delete service: {}", stderr);
+        }
+
+        info!("Service uninstalled successfully");
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+mod windows_service_impl {
+    use super::*;
+
+    pub fn run_as_service() -> Result<()> {
+        anyhow::bail!("Windows service mode is only available on Windows")
+    }
+
+    pub fn install_service(_config_path: &PathBuf) -> Result<()> {
+        anyhow::bail!("Windows service installation is only available on Windows")
+    }
+
+    pub fn uninstall_service() -> Result<()> {
+        anyhow::bail!("Windows service uninstallation is only available on Windows")
     }
 }
 
@@ -643,9 +1061,22 @@ impl Agent {
 // Entry Point
 // ============================================================================
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    // Initialize tracing
+fn main() -> Result<()> {
+    let args = Args::parse();
+
+    // Handle service mode (called by Windows SCM)
+    if args.service {
+        // Initialize minimal logging for service mode
+        tracing_subscriber::registry()
+            .with(tracing_subscriber::EnvFilter::new("optio_agent=info"))
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+
+        return windows_service_impl::run_as_service()
+            .map_err(|e| anyhow::anyhow!("Service error: {}", e));
+    }
+
+    // Initialize tracing for console/interactive modes
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| "optio_agent=info".into()),
@@ -653,16 +1084,61 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    // Handle install command
+    if args.install {
+        let config_path = args.config.canonicalize()
+            .unwrap_or_else(|_| args.config.clone());
+        return windows_service_impl::install_service(&config_path);
+    }
+
+    // Handle uninstall command
+    if args.uninstall {
+        return windows_service_impl::uninstall_service();
+    }
+
+    // Handle status command
+    if args.status {
+        println!("Optio Agent v{}", AGENT_VERSION);
+        println!("Config file: {:?}", args.config);
+
+        match AgentConfig::from_file(&args.config) {
+            Ok(config) => {
+                println!("Hub address: {}", config.agent.hub_address);
+                println!("Heartbeat interval: {}s", config.agent.heartbeat_interval);
+                println!("mTLS enabled: {}", config.has_mtls());
+                if let Some(ref id) = config.agent.id {
+                    println!("Agent ID: {}", id);
+                }
+            }
+            Err(e) => {
+                println!("Failed to load config: {}", e);
+            }
+        }
+        return Ok(());
+    }
+
+    // Console mode (default)
+    info!("Running in console mode");
+
     // Load configuration
-    let config = AgentConfig::from_env();
-    info!("Hub address: {}", config.hub_address);
-    info!("Heartbeat interval: {}s", config.heartbeat_interval);
-    info!("Command timeout: {}s", config.command_timeout);
+    let mut config = AgentConfig::from_file(&args.config)?;
+
+    // Resolve relative paths
+    if let Some(parent) = args.config.parent() {
+        config.resolve_paths(&parent.to_path_buf());
+    }
+
+    info!("Hub address: {}", config.agent.hub_address);
+    info!("Heartbeat interval: {}s", config.agent.heartbeat_interval);
+    info!("Command timeout: {}s", config.agent.command_timeout);
     info!("mTLS enabled: {}", config.has_mtls());
 
-    // Create and run agent
-    let mut agent = Agent::new(config);
-    agent.run().await
+    // Create runtime and run agent
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        let mut agent = Agent::new(config);
+        agent.run().await
+    })
 }
 
 #[cfg(test)]
@@ -683,11 +1159,31 @@ mod tests {
     }
 
     #[test]
-    fn test_config_from_env() {
-        // Test default config
+    fn test_config_default() {
         let config = AgentConfig::default();
-        assert_eq!(config.hub_address, "http://127.0.0.1:50051");
-        assert_eq!(config.heartbeat_interval, DEFAULT_HEARTBEAT_INTERVAL);
+        assert_eq!(config.agent.hub_address, "http://127.0.0.1:50051");
+        assert_eq!(config.agent.heartbeat_interval, DEFAULT_HEARTBEAT_INTERVAL);
         assert!(!config.has_mtls());
+    }
+
+    #[test]
+    fn test_config_parse() {
+        let toml_content = r#"
+[agent]
+id = "test-agent-123"
+hub_address = "https://192.168.1.100:50051"
+heartbeat_interval = 60
+
+[tls]
+ca_path = "certs/ca.pem"
+cert_path = "certs/client.pem"
+key_path = "certs/client.key"
+"#;
+
+        let config: AgentConfig = toml::from_str(toml_content).expect("parse config");
+        assert_eq!(config.agent.id, Some("test-agent-123".to_string()));
+        assert_eq!(config.agent.hub_address, "https://192.168.1.100:50051");
+        assert_eq!(config.agent.heartbeat_interval, 60);
+        assert!(config.has_mtls());
     }
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { listClients, getSystemInfo, getAgents, getAgentStats, refreshAgentStatus } from "@/lib/commands";
-import type { Client, SystemInfo, Agent, AgentStats } from "@/types";
+import { listClients, getSystemInfo, getAgents, getAgentStats, refreshAgentStatus, generateAgentInstaller, getAgentHistory } from "@/lib/commands";
+import type { Client, SystemInfo, Agent, AgentStats, TelemetryRecord, GenerateInstallerRequest } from "@/types";
 import {
   Users,
   FileCode,
@@ -12,6 +12,10 @@ import {
   HardDrive,
   Wifi,
   WifiOff,
+  Package,
+  Download,
+  X,
+  BarChart3,
 } from "lucide-react";
 
 interface StatCardProps {
@@ -84,7 +88,46 @@ function AgentStatusBadge({ status }: { status: string }) {
   );
 }
 
-function AgentCard({ agent }: { agent: Agent }) {
+// Simple sparkline chart for telemetry data
+function TelemetrySparkline({ data, color = "optio" }: { data: number[]; color?: string }) {
+  if (data.length < 2) return null;
+
+  const max = Math.max(...data, 100);
+  const min = Math.min(...data, 0);
+  const range = max - min || 1;
+  const height = 24;
+  const width = 80;
+  const points = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((v - min) / range) * height;
+    return `${x},${y}`;
+  }).join(" ");
+
+  const colorClasses: Record<string, string> = {
+    optio: "stroke-optio-400",
+    green: "stroke-green-400",
+    yellow: "stroke-yellow-400",
+    red: "stroke-red-400",
+  };
+
+  return (
+    <svg width={width} height={height} className="overflow-visible">
+      <polyline
+        points={points}
+        fill="none"
+        className={colorClasses[color] || colorClasses.optio}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function AgentCard({ agent, telemetry }: { agent: Agent; telemetry?: TelemetryRecord[] }) {
+  const cpuData = telemetry?.slice(0, 20).reverse().map(t => t.cpuPercent) || [];
+  const ramData = telemetry?.slice(0, 20).reverse().map(t => t.ramPercent) || [];
+
   return (
     <div className="bg-slate-700/30 rounded-lg p-4 space-y-3">
       <div className="flex items-start justify-between">
@@ -105,13 +148,19 @@ function AgentCard({ agent }: { agent: Agent }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-sm">
-        <div className="flex items-center gap-2 text-slate-400">
-          <Cpu className="w-4 h-4" />
-          <span>CPU: {agent.cpuUsage.toFixed(1)}%</span>
+        <div className="flex items-center justify-between text-slate-400">
+          <div className="flex items-center gap-2">
+            <Cpu className="w-4 h-4" />
+            <span>{agent.cpuUsage.toFixed(1)}%</span>
+          </div>
+          {cpuData.length > 1 && <TelemetrySparkline data={cpuData} color={agent.cpuUsage > 80 ? "red" : "optio"} />}
         </div>
-        <div className="flex items-center gap-2 text-slate-400">
-          <HardDrive className="w-4 h-4" />
-          <span>RAM: {agent.ramUsage.toFixed(1)}%</span>
+        <div className="flex items-center justify-between text-slate-400">
+          <div className="flex items-center gap-2">
+            <HardDrive className="w-4 h-4" />
+            <span>{agent.ramUsage.toFixed(1)}%</span>
+          </div>
+          {ramData.length > 1 && <TelemetrySparkline data={ramData} color={agent.ramUsage > 80 ? "yellow" : "green"} />}
         </div>
       </div>
 
@@ -129,12 +178,161 @@ function AgentCard({ agent }: { agent: Agent }) {
   );
 }
 
+// Installer Modal Component
+function InstallerModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const [clientName, setClientName] = useState("");
+  const [hubAddress, setHubAddress] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; path?: string; agentId?: string; warnings?: string[] } | null>(null);
+
+  const handleGenerate = async () => {
+    if (!clientName.trim()) return;
+
+    setIsGenerating(true);
+    setResult(null);
+
+    try {
+      const request: GenerateInstallerRequest = {
+        clientName: clientName.trim(),
+        hubAddress: hubAddress.trim() || undefined,
+      };
+
+      const response = await generateAgentInstaller(request);
+      setResult({
+        success: response.success,
+        path: response.installerPath,
+        agentId: response.agentId,
+        warnings: response.warnings,
+      });
+    } catch (error) {
+      setResult({
+        success: false,
+        warnings: [String(error)],
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-md">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-white">Generate Agent Installer</h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-white">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {!result ? (
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Client Name *</label>
+              <input
+                type="text"
+                value={clientName}
+                onChange={(e) => setClientName(e.target.value)}
+                placeholder="e.g., Acme Corp"
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-optio-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Hub Address (optional)</label>
+              <input
+                type="text"
+                value={hubAddress}
+                onChange={(e) => setHubAddress(e.target.value)}
+                placeholder="e.g., 192.168.1.100:50051"
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-optio-500"
+              />
+              <p className="text-xs text-slate-500 mt-1">Leave empty to auto-detect</p>
+            </div>
+
+            <button
+              onClick={handleGenerate}
+              disabled={!clientName.trim() || isGenerating}
+              className="w-full py-2 bg-optio-600 hover:bg-optio-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded-lg flex items-center justify-center gap-2"
+            >
+              {isGenerating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Package className="w-4 h-4" />
+                  Generate Installer
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {result.success ? (
+              <>
+                <div className="p-3 bg-green-500/20 border border-green-500/30 rounded-lg">
+                  <p className="text-green-400 font-medium">Installer Generated Successfully!</p>
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  <div>
+                    <span className="text-slate-400">Agent ID:</span>
+                    <span className="text-white ml-2 font-mono">{result.agentId?.slice(0, 8)}...</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400">Path:</span>
+                    <p className="text-white text-xs font-mono mt-1 break-all bg-slate-700/50 p-2 rounded">
+                      {result.path}
+                    </p>
+                  </div>
+                </div>
+
+                {result.warnings && result.warnings.length > 0 && (
+                  <div className="p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+                    <p className="text-yellow-400 text-sm font-medium mb-1">Warnings:</p>
+                    {result.warnings.map((w, i) => (
+                      <p key={i} className="text-yellow-300 text-xs">{w}</p>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg">
+                <p className="text-red-400 font-medium">Generation Failed</p>
+                {result.warnings?.map((w, i) => (
+                  <p key={i} className="text-red-300 text-sm mt-1">{w}</p>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setResult(null);
+                setClientName("");
+                setHubAddress("");
+              }}
+              className="w-full py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg"
+            >
+              Generate Another
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Dashboard() {
   const [clients, setClients] = useState<Client[]>([]);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentStats, setAgentStats] = useState<AgentStats | null>(null);
+  const [agentTelemetry, setAgentTelemetry] = useState<Record<string, TelemetryRecord[]>>({});
   const [isLoading, setIsLoading] = useState(true);
+  const [showInstallerModal, setShowInstallerModal] = useState(false);
 
   const loadAgents = useCallback(async () => {
     try {
@@ -146,6 +344,18 @@ export function Dashboard() {
       ]);
       setAgents(agentData);
       setAgentStats(stats);
+
+      // Load telemetry for online agents
+      const telemetryData: Record<string, TelemetryRecord[]> = {};
+      for (const agent of agentData.filter(a => a.status === "online").slice(0, 6)) {
+        try {
+          const history = await getAgentHistory(agent.machineId, 20);
+          telemetryData[agent.machineId] = history;
+        } catch {
+          // Ignore errors loading individual agent telemetry
+        }
+      }
+      setAgentTelemetry(telemetryData);
     } catch (error) {
       console.error("Failed to load agents:", error);
     }
@@ -254,7 +464,11 @@ export function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {agents.slice(0, 6).map((agent) => (
-              <AgentCard key={agent.machineId} agent={agent} />
+              <AgentCard
+                key={agent.machineId}
+                agent={agent}
+                telemetry={agentTelemetry[agent.machineId]}
+              />
             ))}
           </div>
         )}
@@ -271,23 +485,33 @@ export function Dashboard() {
       {/* Quick Actions */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <button className="flex items-center justify-between p-4 bg-slate-700/30 hover:bg-slate-700/50 rounded-lg transition-colors group">
-            <div>
+            <div className="text-left">
               <p className="text-white font-medium">New Client</p>
               <p className="text-sm text-slate-400">Add a new client profile</p>
             </div>
             <ArrowRight className="w-5 h-5 text-slate-500 group-hover:text-optio-400 transition-colors" />
           </button>
+          <button
+            onClick={() => setShowInstallerModal(true)}
+            className="flex items-center justify-between p-4 bg-optio-600/20 hover:bg-optio-600/30 border border-optio-500/30 rounded-lg transition-colors group"
+          >
+            <div className="text-left">
+              <p className="text-white font-medium">Generate Installer</p>
+              <p className="text-sm text-slate-400">Create agent deployment package</p>
+            </div>
+            <Package className="w-5 h-5 text-optio-400 group-hover:text-optio-300 transition-colors" />
+          </button>
           <button className="flex items-center justify-between p-4 bg-slate-700/30 hover:bg-slate-700/50 rounded-lg transition-colors group">
-            <div>
+            <div className="text-left">
               <p className="text-white font-medium">Generate Script</p>
               <p className="text-sm text-slate-400">Create a provisioning script</p>
             </div>
             <ArrowRight className="w-5 h-5 text-slate-500 group-hover:text-optio-400 transition-colors" />
           </button>
           <button className="flex items-center justify-between p-4 bg-slate-700/30 hover:bg-slate-700/50 rounded-lg transition-colors group">
-            <div>
+            <div className="text-left">
               <p className="text-white font-medium">Run Audit</p>
               <p className="text-sm text-slate-400">Start a compliance check</p>
             </div>
@@ -320,6 +544,12 @@ export function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Installer Modal */}
+      <InstallerModal
+        isOpen={showInstallerModal}
+        onClose={() => setShowInstallerModal(false)}
+      />
     </div>
   );
 }

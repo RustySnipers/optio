@@ -1141,3 +1141,47 @@ export interface AgentStats {
   offline: number;
   unknown: number;
 }
+
+// ============================================================================
+// Telemetry Types (Agent History & Metrics)
+// ============================================================================
+
+export interface TelemetryRecord {
+  id: number;
+  agentId: string;
+  cpuPercent: number;
+  ramPercent: number;
+  diskPercent: number | null;
+  timestamp: string;
+}
+
+export interface TelemetryStats {
+  avgCpu: number;
+  maxCpu: number;
+  minCpu: number;
+  avgRam: number;
+  maxRam: number;
+  minRam: number;
+  sampleCount: number;
+}
+
+// ============================================================================
+// Installer Generation Types (Factory)
+// ============================================================================
+
+export interface GenerateInstallerRequest {
+  clientName: string;
+  hubAddress?: string;
+  heartbeatInterval?: number;
+  caCertPath?: string;
+  caKeyPath?: string;
+}
+
+export interface GenerateInstallerResponse {
+  success: boolean;
+  agentId: string;
+  installerPath: string;
+  fileSize: number;
+  generatedAt: string;
+  warnings: string[];
+}
