@@ -139,6 +139,13 @@ pub fn run() {
             commands::reporting::generate_executive_pdf,
             commands::reporting::generate_demo_pdf,
             commands::reporting::open_pdf_location,
+            // Agent management commands
+            commands::agents::get_agents,
+            commands::agents::get_agent,
+            commands::agents::get_agents_by_status,
+            commands::agents::get_agent_stats,
+            commands::agents::delete_agent,
+            commands::agents::refresh_agent_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

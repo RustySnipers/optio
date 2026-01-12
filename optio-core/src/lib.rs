@@ -5,3 +5,4 @@ pub mod proto {
 pub mod grc;
 pub mod infrastructure;
 pub mod network;
+pub mod security;

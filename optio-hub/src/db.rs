@@ -79,10 +79,71 @@ impl Database {
                 FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
             );
 
+            -- Agents table for tracking connected optio-agent instances
+            CREATE TABLE IF NOT EXISTS agents (
+                machine_id TEXT PRIMARY KEY,
+                hostname TEXT NOT NULL,
+                os_info TEXT,
+                cpu_usage REAL DEFAULT 0.0,
+                ram_usage REAL DEFAULT 0.0,
+                ram_total INTEGER DEFAULT 0,
+                disk_free INTEGER DEFAULT 0,
+                disk_total INTEGER DEFAULT 0,
+                uptime_seconds INTEGER DEFAULT 0,
+                ip_addresses TEXT,
+                agent_version TEXT,
+                first_seen TEXT NOT NULL,
+                last_seen TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'unknown',
+                client_id TEXT,
+                tags TEXT,
+                notes TEXT,
+                FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+            );
+
+            -- Pending commands queue for agents
+            CREATE TABLE IF NOT EXISTS pending_commands (
+                command_id TEXT PRIMARY KEY,
+                machine_id TEXT NOT NULL,
+                command_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                priority INTEGER DEFAULT 0,
+                timeout_seconds INTEGER DEFAULT 300,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                dispatched_at TEXT,
+                completed_at TEXT,
+                result_json TEXT,
+                error_message TEXT,
+                FOREIGN KEY (machine_id) REFERENCES agents(machine_id) ON DELETE CASCADE
+            );
+
+            -- Command execution history
+            CREATE TABLE IF NOT EXISTS command_history (
+                id TEXT PRIMARY KEY,
+                command_id TEXT NOT NULL,
+                machine_id TEXT NOT NULL,
+                command_type TEXT NOT NULL,
+                success INTEGER NOT NULL DEFAULT 0,
+                exit_code INTEGER,
+                stdout TEXT,
+                stderr TEXT,
+                error_message TEXT,
+                started_at TEXT,
+                finished_at TEXT,
+                duration_ms INTEGER,
+                created_at TEXT NOT NULL
+            );
+
             -- Create indexes for performance
             CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
             CREATE INDEX IF NOT EXISTS idx_script_history_client ON script_history(client_id);
             CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON audit_log(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
+            CREATE INDEX IF NOT EXISTS idx_agents_last_seen ON agents(last_seen);
+            CREATE INDEX IF NOT EXISTS idx_pending_commands_machine ON pending_commands(machine_id);
+            CREATE INDEX IF NOT EXISTS idx_pending_commands_status ON pending_commands(status);
+            CREATE INDEX IF NOT EXISTS idx_command_history_machine ON command_history(machine_id);
         "#)?;
 
         tracing::info!("Database schema initialized");
@@ -252,4 +313,264 @@ pub async fn initialize(app_handle: &AppHandle) -> OptioResult<()> {
     app_handle.manage(db);
 
     Ok(())
+}
+
+// ============================================================================
+// Agent Types and Repository
+// ============================================================================
+
+/// Agent status enumeration
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentStatus {
+    Online,
+    Offline,
+    Unknown,
+    Error,
+}
+
+impl std::fmt::Display for AgentStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AgentStatus::Online => write!(f, "online"),
+            AgentStatus::Offline => write!(f, "offline"),
+            AgentStatus::Unknown => write!(f, "unknown"),
+            AgentStatus::Error => write!(f, "error"),
+        }
+    }
+}
+
+impl From<&str> for AgentStatus {
+    fn from(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "online" => AgentStatus::Online,
+            "offline" => AgentStatus::Offline,
+            "error" => AgentStatus::Error,
+            _ => AgentStatus::Unknown,
+        }
+    }
+}
+
+/// Agent information from heartbeat data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Agent {
+    pub machine_id: String,
+    pub hostname: String,
+    pub os_info: Option<String>,
+    pub cpu_usage: f32,
+    pub ram_usage: f32,
+    pub ram_total: i64,
+    pub disk_free: i64,
+    pub disk_total: i64,
+    pub uptime_seconds: i64,
+    pub ip_addresses: Option<String>,
+    pub agent_version: Option<String>,
+    pub first_seen: String,
+    pub last_seen: String,
+    pub status: AgentStatus,
+    pub client_id: Option<String>,
+    pub tags: Option<String>,
+    pub notes: Option<String>,
+}
+
+impl Agent {
+    /// Check if agent is considered stale (no heartbeat in 2 minutes)
+    pub fn is_stale(&self) -> bool {
+        if let Ok(last_seen) = DateTime::parse_from_rfc3339(&self.last_seen) {
+            let now = Utc::now();
+            let duration = now.signed_duration_since(last_seen);
+            duration.num_seconds() > 120 // 2 minutes
+        } else {
+            true
+        }
+    }
+}
+
+/// Repository for agent CRUD operations
+pub struct AgentRepository<'a> {
+    db: &'a Database,
+}
+
+impl<'a> AgentRepository<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        AgentRepository { db }
+    }
+
+    /// List all agents
+    pub fn list(&self) -> OptioResult<Vec<Agent>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT machine_id, hostname, os_info, cpu_usage, ram_usage,
+                   ram_total, disk_free, disk_total, uptime_seconds,
+                   ip_addresses, agent_version, first_seen, last_seen,
+                   status, client_id, tags, notes
+            FROM agents
+            ORDER BY last_seen DESC
+            "#
+        )?;
+
+        let agents = stmt.query_map([], |row| {
+            Ok(Agent {
+                machine_id: row.get(0)?,
+                hostname: row.get(1)?,
+                os_info: row.get(2)?,
+                cpu_usage: row.get(3)?,
+                ram_usage: row.get(4)?,
+                ram_total: row.get(5)?,
+                disk_free: row.get(6)?,
+                disk_total: row.get(7)?,
+                uptime_seconds: row.get(8)?,
+                ip_addresses: row.get(9)?,
+                agent_version: row.get(10)?,
+                first_seen: row.get(11)?,
+                last_seen: row.get(12)?,
+                status: AgentStatus::from(row.get::<_, String>(13)?.as_str()),
+                client_id: row.get(14)?,
+                tags: row.get(15)?,
+                notes: row.get(16)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(agents)
+    }
+
+    /// Get a single agent by machine_id
+    pub fn get(&self, machine_id: &str) -> OptioResult<Option<Agent>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT machine_id, hostname, os_info, cpu_usage, ram_usage,
+                   ram_total, disk_free, disk_total, uptime_seconds,
+                   ip_addresses, agent_version, first_seen, last_seen,
+                   status, client_id, tags, notes
+            FROM agents
+            WHERE machine_id = ?1
+            "#
+        )?;
+
+        let mut rows = stmt.query(params![machine_id])?;
+
+        if let Some(row) = rows.next()? {
+            Ok(Some(Agent {
+                machine_id: row.get(0)?,
+                hostname: row.get(1)?,
+                os_info: row.get(2)?,
+                cpu_usage: row.get(3)?,
+                ram_usage: row.get(4)?,
+                ram_total: row.get(5)?,
+                disk_free: row.get(6)?,
+                disk_total: row.get(7)?,
+                uptime_seconds: row.get(8)?,
+                ip_addresses: row.get(9)?,
+                agent_version: row.get(10)?,
+                first_seen: row.get(11)?,
+                last_seen: row.get(12)?,
+                status: AgentStatus::from(row.get::<_, String>(13)?.as_str()),
+                client_id: row.get(14)?,
+                tags: row.get(15)?,
+                notes: row.get(16)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// List agents by status
+    pub fn list_by_status(&self, status: AgentStatus) -> OptioResult<Vec<Agent>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT machine_id, hostname, os_info, cpu_usage, ram_usage,
+                   ram_total, disk_free, disk_total, uptime_seconds,
+                   ip_addresses, agent_version, first_seen, last_seen,
+                   status, client_id, tags, notes
+            FROM agents
+            WHERE status = ?1
+            ORDER BY last_seen DESC
+            "#
+        )?;
+
+        let agents = stmt.query_map([status.to_string()], |row| {
+            Ok(Agent {
+                machine_id: row.get(0)?,
+                hostname: row.get(1)?,
+                os_info: row.get(2)?,
+                cpu_usage: row.get(3)?,
+                ram_usage: row.get(4)?,
+                ram_total: row.get(5)?,
+                disk_free: row.get(6)?,
+                disk_total: row.get(7)?,
+                uptime_seconds: row.get(8)?,
+                ip_addresses: row.get(9)?,
+                agent_version: row.get(10)?,
+                first_seen: row.get(11)?,
+                last_seen: row.get(12)?,
+                status: AgentStatus::from(row.get::<_, String>(13)?.as_str()),
+                client_id: row.get(14)?,
+                tags: row.get(15)?,
+                notes: row.get(16)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(agents)
+    }
+
+    /// Mark stale agents as offline (called periodically)
+    pub fn mark_stale_agents_offline(&self) -> OptioResult<usize> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        // Mark agents offline if no heartbeat in 2 minutes
+        let threshold = (Utc::now() - chrono::Duration::seconds(120)).to_rfc3339();
+
+        let count = conn.execute(
+            r#"
+            UPDATE agents
+            SET status = 'offline'
+            WHERE status = 'online' AND last_seen < ?1
+            "#,
+            params![threshold],
+        )?;
+
+        if count > 0 {
+            tracing::info!("Marked {} stale agents as offline", count);
+        }
+
+        Ok(count)
+    }
+
+    /// Delete an agent
+    pub fn delete(&self, machine_id: &str) -> OptioResult<bool> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+        let deleted = conn.execute("DELETE FROM agents WHERE machine_id = ?1", params![machine_id])?;
+        Ok(deleted > 0)
+    }
+
+    /// Count agents by status
+    pub fn count_by_status(&self) -> OptioResult<std::collections::HashMap<String, i64>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT status, COUNT(*) FROM agents GROUP BY status"
+        )?;
+
+        let mut counts = std::collections::HashMap::new();
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+
+        for row in rows.flatten() {
+            counts.insert(row.0, row.1);
+        }
+
+        Ok(counts)
+    }
 }

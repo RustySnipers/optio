@@ -67,6 +67,9 @@ import type {
   ComplianceStatusReport,
   GenerateExecutivePdfRequest,
   PdfGenerationResult,
+  // Alpha - Agent types
+  Agent,
+  AgentStats,
 } from "@/types";
 
 // ============================================================================
@@ -734,4 +737,50 @@ export async function generateDemoPdf(
  */
 export async function openPdfLocation(filePath: string): Promise<boolean> {
   return invoke<boolean>("open_pdf_location", { filePath });
+}
+
+// ============================================================================
+// Agent Management Commands (Alpha)
+// ============================================================================
+
+/**
+ * Get all registered agents
+ */
+export async function getAgents(): Promise<Agent[]> {
+  return invoke<Agent[]>("get_agents");
+}
+
+/**
+ * Get a specific agent by machine_id
+ */
+export async function getAgent(machineId: string): Promise<Agent | null> {
+  return invoke<Agent | null>("get_agent", { machineId });
+}
+
+/**
+ * Get agents filtered by status
+ */
+export async function getAgentsByStatus(status: string): Promise<Agent[]> {
+  return invoke<Agent[]>("get_agents_by_status", { status });
+}
+
+/**
+ * Get agent statistics summary
+ */
+export async function getAgentStats(): Promise<AgentStats> {
+  return invoke<AgentStats>("get_agent_stats");
+}
+
+/**
+ * Delete an agent from the database
+ */
+export async function deleteAgent(machineId: string): Promise<boolean> {
+  return invoke<boolean>("delete_agent", { machineId });
+}
+
+/**
+ * Refresh agent status (marks stale agents as offline)
+ */
+export async function refreshAgentStatus(): Promise<number> {
+  return invoke<number>("refresh_agent_status");
 }
