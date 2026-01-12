@@ -2,24 +2,21 @@ syntax = "proto3";
 
 package optio;
 
-service HeartbeatService {
-  rpc SendHeartbeat(Heartbeat) returns (HeartbeatResponse);
+service Collector {
+  rpc SubmitScanResult(ScanResult) returns (SubmitScanResultResponse);
 }
 
-message Heartbeat {
+message ScanResult {
   string machine_id = 1;
-  string hostname = 2;
-  string os_info = 3;
-  uint64 timestamp = 4;
-  Status status = 5;
-
-  enum Status {
-    ONLINE = 0;
-    BUSY = 1;
-    ERROR = 2;
-  }
+  string scan_id = 2;
+  string target = 3;
+  uint64 started_at = 4;
+  uint64 finished_at = 5;
+  string status = 6;
+  string payload_json = 7;
 }
 
-message HeartbeatResponse {
+message SubmitScanResultResponse {
   bool accepted = 1;
+  string message = 2;
 }
