@@ -1,38 +1,28 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-use optio_core::proto::collector_client::CollectorClient;
-use optio_core::proto::ScanResult;
+use optio_core::network::models::{ScanConfig, ScanType};
+use optio_core::network::scanner::TcpScanner;
 
 #[tokio::main]
 async fn main() {
-    let mut client = match CollectorClient::connect("http://127.0.0.1:50051").await {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("failed to connect to hub: {err}");
-            return;
-        }
+    let scan_config = ScanConfig {
+        targets: vec!["127.0.0.1".to_string()],
+        scan_type: ScanType::QuickScan,
+        ..Default::default()
     };
 
-    loop {
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|duration| duration.as_secs())
-            .unwrap_or_default();
+    let scanner = TcpScanner::new();
 
-        let scan_result = ScanResult {
-            machine_id: "dummy-machine-id".to_string(),
-            scan_id: format!("scan-{timestamp}"),
-            target: "127.0.0.1".to_string(),
-            started_at: timestamp.saturating_sub(30),
-            finished_at: timestamp,
-            status: "completed".to_string(),
-            payload_json: r#"{"ports":[],"summary":"dummy"}"#.to_string(),
-        };
+    println!(
+        "Starting {:?} for targets: {:?}",
+        scan_config.scan_type, scan_config.targets
+    );
 
-        if let Err(err) = client.submit_scan_result(scan_result).await {
-            eprintln!("failed to submit scan result: {err}");
+    match scanner.scan_single_host("127.0.0.1").await {
+        Ok(result) => {
+            println!("Scan complete:");
+            println!("{result:#?}");
         }
-
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        Err(err) => {
+            eprintln!("Scan failed: {err}");
+        }
     }
 }
