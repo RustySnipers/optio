@@ -135,6 +135,17 @@ impl Database {
                 created_at TEXT NOT NULL
             );
 
+            -- Telemetry history for time-series metrics
+            CREATE TABLE IF NOT EXISTS telemetry_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id TEXT NOT NULL,
+                cpu_percent REAL NOT NULL,
+                ram_percent REAL NOT NULL,
+                disk_percent REAL,
+                timestamp TEXT NOT NULL,
+                FOREIGN KEY (agent_id) REFERENCES agents(machine_id) ON DELETE CASCADE
+            );
+
             -- Create indexes for performance
             CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
             CREATE INDEX IF NOT EXISTS idx_script_history_client ON script_history(client_id);
@@ -144,6 +155,8 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_pending_commands_machine ON pending_commands(machine_id);
             CREATE INDEX IF NOT EXISTS idx_pending_commands_status ON pending_commands(status);
             CREATE INDEX IF NOT EXISTS idx_command_history_machine ON command_history(machine_id);
+            CREATE INDEX IF NOT EXISTS idx_telemetry_agent ON telemetry_history(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON telemetry_history(timestamp);
         "#)?;
 
         tracing::info!("Database schema initialized");
@@ -573,4 +586,171 @@ impl<'a> AgentRepository<'a> {
 
         Ok(counts)
     }
+}
+
+// ============================================================================
+// Telemetry History Types and Repository
+// ============================================================================
+
+/// A single telemetry record for time-series storage
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryRecord {
+    pub id: i64,
+    pub agent_id: String,
+    pub cpu_percent: f32,
+    pub ram_percent: f32,
+    pub disk_percent: Option<f32>,
+    pub timestamp: String,
+}
+
+/// Repository for telemetry history operations
+pub struct TelemetryRepository<'a> {
+    db: &'a Database,
+}
+
+impl<'a> TelemetryRepository<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        TelemetryRepository { db }
+    }
+
+    /// Insert a new telemetry record
+    pub fn insert(&self, agent_id: &str, cpu_percent: f32, ram_percent: f32, disk_percent: Option<f32>) -> OptioResult<()> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let timestamp = Utc::now().to_rfc3339();
+
+        conn.execute(
+            "INSERT INTO telemetry_history (agent_id, cpu_percent, ram_percent, disk_percent, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![agent_id, cpu_percent, ram_percent, disk_percent, timestamp],
+        )?;
+
+        Ok(())
+    }
+
+    /// Get telemetry history for an agent
+    pub fn get_history(&self, agent_id: &str, limit: u32) -> OptioResult<Vec<TelemetryRecord>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, agent_id, cpu_percent, ram_percent, disk_percent, timestamp
+            FROM telemetry_history
+            WHERE agent_id = ?1
+            ORDER BY timestamp DESC
+            LIMIT ?2
+            "#
+        )?;
+
+        let records = stmt.query_map(params![agent_id, limit], |row| {
+            Ok(TelemetryRecord {
+                id: row.get(0)?,
+                agent_id: row.get(1)?,
+                cpu_percent: row.get(2)?,
+                ram_percent: row.get(3)?,
+                disk_percent: row.get(4)?,
+                timestamp: row.get(5)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(records)
+    }
+
+    /// Get telemetry history within a time range
+    pub fn get_history_range(&self, agent_id: &str, start: &str, end: &str) -> OptioResult<Vec<TelemetryRecord>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, agent_id, cpu_percent, ram_percent, disk_percent, timestamp
+            FROM telemetry_history
+            WHERE agent_id = ?1 AND timestamp >= ?2 AND timestamp <= ?3
+            ORDER BY timestamp ASC
+            "#
+        )?;
+
+        let records = stmt.query_map(params![agent_id, start, end], |row| {
+            Ok(TelemetryRecord {
+                id: row.get(0)?,
+                agent_id: row.get(1)?,
+                cpu_percent: row.get(2)?,
+                ram_percent: row.get(3)?,
+                disk_percent: row.get(4)?,
+                timestamp: row.get(5)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(records)
+    }
+
+    /// Cleanup old telemetry records (keep last N days)
+    pub fn cleanup_old_records(&self, days_to_keep: i64) -> OptioResult<usize> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let cutoff = (Utc::now() - chrono::Duration::days(days_to_keep)).to_rfc3339();
+
+        let deleted = conn.execute(
+            "DELETE FROM telemetry_history WHERE timestamp < ?1",
+            params![cutoff],
+        )?;
+
+        if deleted > 0 {
+            tracing::info!("Cleaned up {} old telemetry records", deleted);
+        }
+
+        Ok(deleted)
+    }
+
+    /// Get summary statistics for an agent
+    pub fn get_stats(&self, agent_id: &str, hours: i64) -> OptioResult<TelemetryStats> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let cutoff = (Utc::now() - chrono::Duration::hours(hours)).to_rfc3339();
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT
+                AVG(cpu_percent) as avg_cpu,
+                MAX(cpu_percent) as max_cpu,
+                MIN(cpu_percent) as min_cpu,
+                AVG(ram_percent) as avg_ram,
+                MAX(ram_percent) as max_ram,
+                MIN(ram_percent) as min_ram,
+                COUNT(*) as sample_count
+            FROM telemetry_history
+            WHERE agent_id = ?1 AND timestamp >= ?2
+            "#
+        )?;
+
+        let stats = stmt.query_row(params![agent_id, cutoff], |row| {
+            Ok(TelemetryStats {
+                avg_cpu: row.get(0).unwrap_or(0.0),
+                max_cpu: row.get(1).unwrap_or(0.0),
+                min_cpu: row.get(2).unwrap_or(0.0),
+                avg_ram: row.get(3).unwrap_or(0.0),
+                max_ram: row.get(4).unwrap_or(0.0),
+                min_ram: row.get(5).unwrap_or(0.0),
+                sample_count: row.get(6).unwrap_or(0),
+            })
+        }).unwrap_or_default();
+
+        Ok(stats)
+    }
+}
+
+/// Telemetry statistics summary
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TelemetryStats {
+    pub avg_cpu: f32,
+    pub max_cpu: f32,
+    pub min_cpu: f32,
+    pub avg_ram: f32,
+    pub max_ram: f32,
+    pub min_ram: f32,
+    pub sample_count: i64,
 }

@@ -176,6 +176,24 @@ fn upsert_agent(db: &Database, heartbeat: &HeartbeatRequest) -> Result<(), rusql
         tracing::info!("Registered new agent: {} ({})", heartbeat.machine_id, heartbeat.hostname);
     }
 
+    // Record telemetry history for time-series metrics
+    let disk_percent = if heartbeat.disk_total > 0 {
+        Some((1.0 - (heartbeat.disk_free as f32 / heartbeat.disk_total as f32)) * 100.0)
+    } else {
+        None
+    };
+
+    conn.execute(
+        "INSERT INTO telemetry_history (agent_id, cpu_percent, ram_percent, disk_percent, timestamp) VALUES (?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![
+            heartbeat.machine_id,
+            heartbeat.cpu_usage,
+            heartbeat.ram_usage,
+            disk_percent,
+            now,
+        ],
+    )?;
+
     Ok(())
 }
 

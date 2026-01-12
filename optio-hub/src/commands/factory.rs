@@ -2,9 +2,11 @@
 //!
 //! "The Factory" - Dynamic client provisioning with PowerShell script generation.
 //! Manufactures unique, state-aware scripts for each engagement.
+//! Also handles agent installer package generation.
 
 use crate::error::{OptioError, OptioResult};
 use crate::factory::{ScriptConfig, ScriptGenerator, TemplateInfo, AgentScriptConfig, generate_agent_script as factory_generate_agent};
+use crate::factory::installer::{InstallerConfig, InstallerGenerator, InstallerResult};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use std::path::PathBuf;
@@ -388,6 +390,117 @@ pub async fn generate_agent_script(
         generated_at: result.generated_at.to_rfc3339(),
         warnings: result.warnings,
     })
+}
+
+// ============================================================================
+// Agent Installer Package Generation
+// ============================================================================
+
+/// Request payload for installer generation
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateInstallerRequest {
+    /// Client name for identification
+    pub client_name: String,
+    /// Hub server address (e.g., "192.168.1.100:50051")
+    pub hub_address: Option<String>,
+    /// Heartbeat interval in seconds
+    pub heartbeat_interval: Option<u32>,
+    /// Path to existing CA certificate (optional)
+    pub ca_cert_path: Option<String>,
+    /// Path to existing CA private key (optional)
+    pub ca_key_path: Option<String>,
+}
+
+/// Response from installer generation
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GenerateInstallerResponse {
+    /// Whether generation was successful
+    pub success: bool,
+    /// Unique agent identifier
+    pub agent_id: String,
+    /// Path to the generated ZIP file
+    pub installer_path: String,
+    /// Size of the ZIP file in bytes
+    pub file_size: u64,
+    /// Generation timestamp
+    pub generated_at: String,
+    /// Warnings or notes
+    pub warnings: Vec<String>,
+}
+
+/// Generate an agent installer package with certificates and configuration
+///
+/// This creates a complete deployment package including:
+/// - Agent binary (optio-agent.exe)
+/// - mTLS certificates (ca.pem, client.pem, client.key)
+/// - Configuration file (config.toml)
+/// - Installation script (install.ps1)
+#[tauri::command]
+pub async fn generate_agent_installer(
+    app_handle: AppHandle,
+    request: GenerateInstallerRequest,
+) -> Result<GenerateInstallerResponse, String> {
+    tracing::info!(
+        "Generating agent installer for client: {}",
+        request.client_name
+    );
+
+    // Get the consultant's IP for default hub address
+    let default_address = format!(
+        "{}:50051",
+        crate::commands::system::detect_local_ip().unwrap_or_else(|| "127.0.0.1".to_string())
+    );
+
+    let config = InstallerConfig {
+        client_name: request.client_name,
+        hub_address: request.hub_address.unwrap_or(default_address),
+        heartbeat_interval: request.heartbeat_interval.unwrap_or(30),
+        agent_id: None, // Auto-generate
+    };
+
+    // Get the output directory
+    let output_dir = get_installers_dir(&app_handle)?;
+
+    // Create the generator
+    let mut generator = InstallerGenerator::new(output_dir);
+
+    // If CA paths are provided, use them
+    if let (Some(ca_cert), Some(ca_key)) = (&request.ca_cert_path, &request.ca_key_path) {
+        generator = generator.with_ca(PathBuf::from(ca_cert), PathBuf::from(ca_key));
+    }
+
+    // Generate the installer
+    let result = generator.generate(&config).map_err(|e| e.to_string())?;
+
+    tracing::info!(
+        "Installer generated: {} ({} bytes)",
+        result.installer_path,
+        result.file_size
+    );
+
+    Ok(GenerateInstallerResponse {
+        success: true,
+        agent_id: result.agent_id,
+        installer_path: result.installer_path,
+        file_size: result.file_size,
+        generated_at: result.generated_at.to_rfc3339(),
+        warnings: result.warnings,
+    })
+}
+
+/// Get the installers output directory
+fn get_installers_dir(app_handle: &AppHandle) -> Result<PathBuf, String> {
+    let app_data = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+
+    let output_dir = app_data.join("installers");
+    std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
+
+    Ok(output_dir)
 }
 
 #[cfg(test)]

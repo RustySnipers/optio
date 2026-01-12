@@ -38,6 +38,9 @@ ipnetwork = "0.20"
 futures = "0.3"
 printpdf = "0.7"
 optio-core = { path = "../optio-core" }
+rcgen = { version = "0.13", features = ["pem"] }
+zip = { version = "2.2", default-features = false, features = ["deflate"] }
+toml = "0.8"
 tonic = { workspace = true }
 hyper = "1.5"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http2"] }

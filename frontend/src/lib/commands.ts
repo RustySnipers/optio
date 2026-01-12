@@ -70,6 +70,11 @@ import type {
   // Alpha - Agent types
   Agent,
   AgentStats,
+  TelemetryRecord,
+  TelemetryStats,
+  // Installer types
+  GenerateInstallerRequest,
+  GenerateInstallerResponse,
 } from "@/types";
 
 // ============================================================================
@@ -783,4 +788,50 @@ export async function deleteAgent(machineId: string): Promise<boolean> {
  */
 export async function refreshAgentStatus(): Promise<number> {
   return invoke<number>("refresh_agent_status");
+}
+
+/**
+ * Get telemetry history for an agent
+ */
+export async function getAgentHistory(
+  agentId: string,
+  limit?: number
+): Promise<TelemetryRecord[]> {
+  return invoke<TelemetryRecord[]>("get_agent_history", {
+    agentId,
+    limit: limit ?? null,
+  });
+}
+
+/**
+ * Get telemetry statistics for an agent
+ */
+export async function getAgentTelemetryStats(
+  agentId: string,
+  hours?: number
+): Promise<TelemetryStats> {
+  return invoke<TelemetryStats>("get_agent_telemetry_stats", {
+    agentId,
+    hours: hours ?? null,
+  });
+}
+
+/**
+ * Cleanup old telemetry records
+ */
+export async function cleanupTelemetry(daysToKeep?: number): Promise<number> {
+  return invoke<number>("cleanup_telemetry", { daysToKeep: daysToKeep ?? null });
+}
+
+// ============================================================================
+// Factory - Installer Generation Commands
+// ============================================================================
+
+/**
+ * Generate an agent installer package with certificates and config
+ */
+export async function generateAgentInstaller(
+  request: GenerateInstallerRequest
+): Promise<GenerateInstallerResponse> {
+  return invoke<GenerateInstallerResponse>("generate_agent_installer", { request });
 }
