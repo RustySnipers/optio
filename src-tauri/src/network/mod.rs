@@ -1,12 +1,14 @@
 //! Network Intelligence Module
 //!
-//! Provides network discovery, Nmap integration, and asset inventory management.
-//! Enables consultants to map client networks and track discovered assets.
+//! Provides network discovery, Nmap integration, asset inventory management,
+//! and Hub listener for Agent heartbeat reception.
 
+pub mod inventory;
+pub mod listener;
 pub mod models;
 pub mod scanner;
-pub mod inventory;
 
+pub use inventory::*;
+pub use listener::*;
 pub use models::*;
 pub use scanner::*;
-pub use inventory::*;

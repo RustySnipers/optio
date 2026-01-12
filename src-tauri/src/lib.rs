@@ -34,6 +34,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(commands::crypto::CryptoState::default())
+        .manage(commands::network::ListenerState::default())
         .manage(commands::network::NetworkState::default())
         .manage(commands::reporting::ReportingState::default())
         .setup(|app| {
@@ -123,6 +124,13 @@ pub fn run() {
             commands::network::list_asset_groups,
             commands::network::add_asset_to_group,
             commands::network::remove_asset_from_group,
+            // Hub Listener commands (Agent heartbeat reception)
+            commands::network::start_hub_listener,
+            commands::network::stop_hub_listener,
+            commands::network::get_listener_status,
+            commands::network::register_agent_token,
+            commands::network::get_agent_sessions,
+            commands::network::queue_agent_command,
             // Reporting commands
             commands::reporting::get_report_template_list,
             commands::reporting::get_template_by_type,

@@ -1,20 +1,24 @@
 //! Network Intelligence Commands
 //!
-//! Tauri commands for network scanning and asset inventory management.
+//! Tauri commands for network scanning, asset inventory management,
+//! and Hub listener for Agent heartbeat reception.
 
+use crate::crypto::SignedCommand;
 use crate::network::{
+    inventory::{generate_demo_assets, AssetInventory},
+    listener::{AgentSession, HubListener, ListenerConfig},
     models::*,
     scanner::{
-        check_nmap_installed, get_scan_types, build_nmap_command, validate_target,
-        get_common_ports, scan_network_native, scan_network_with_ports,
-        NmapInfo, ScanTypeInfo, TargetValidation, CommonPort, ScannedHost,
-        DEFAULT_SCAN_PORTS, EXTENDED_SCAN_PORTS,
+        build_nmap_command, check_nmap_installed, get_common_ports, get_scan_types,
+        scan_network_native, scan_network_with_ports, validate_target, CommonPort, NmapInfo,
+        ScannedHost, ScanTypeInfo, TargetValidation, DEFAULT_SCAN_PORTS, EXTENDED_SCAN_PORTS,
     },
-    inventory::{generate_demo_assets, AssetInventory},
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Mutex;
 use tauri::State;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
 /// In-memory storage for demo purposes
@@ -29,6 +33,21 @@ impl Default for NetworkState {
         Self {
             inventory: Mutex::new(AssetInventory::new()),
             scans: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+/// State for the Hub listener (Agent heartbeat reception)
+pub struct ListenerState {
+    listener: RwLock<Option<HubListener>>,
+    registered_tokens: RwLock<HashMap<String, String>>,
+}
+
+impl Default for ListenerState {
+    fn default() -> Self {
+        Self {
+            listener: RwLock::new(None),
+            registered_tokens: RwLock::new(HashMap::new()),
         }
     }
 }
@@ -505,6 +524,162 @@ fn parse_asset_status(s: &str) -> Result<AssetStatus, String> {
         "pending" => Ok(AssetStatus::Pending),
         "maintenance" => Ok(AssetStatus::Maintenance),
         _ => Err(format!("Unknown asset status: {}", s)),
+    }
+}
+
+// ============================================================================
+// Hub Listener Commands (Agent Heartbeat Reception)
+// ============================================================================
+
+/// Start request for the Hub listener
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartListenerRequest {
+    /// Port to listen on (default: 8443)
+    pub port: Option<u16>,
+    /// Bind address (default: 0.0.0.0)
+    pub bind_addr: Option<String>,
+}
+
+/// Response after starting the listener
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListenerStatusResponse {
+    pub running: bool,
+    pub port: Option<u16>,
+    pub bind_addr: Option<String>,
+    pub active_sessions: usize,
+}
+
+/// Start the Hub listener for Agent connections
+#[tauri::command]
+pub async fn start_hub_listener(
+    request: StartListenerRequest,
+    state: State<'_, ListenerState>,
+) -> Result<ListenerStatusResponse, String> {
+    let mut listener_guard = state.listener.write().await;
+
+    if listener_guard.is_some() {
+        return Err("Listener is already running".to_string());
+    }
+
+    let port = request.port.unwrap_or(8443);
+    let bind_addr = request.bind_addr.unwrap_or_else(|| "0.0.0.0".to_string());
+
+    // Get registered tokens
+    let tokens = state.registered_tokens.read().await.clone();
+
+    let config = ListenerConfig {
+        port,
+        bind_addr: bind_addr.clone(),
+        valid_tokens: tokens,
+        ..Default::default()
+    };
+
+    let mut listener = HubListener::new(config);
+
+    listener
+        .start()
+        .await
+        .map_err(|e| format!("Failed to start listener: {}", e))?;
+
+    *listener_guard = Some(listener);
+
+    tracing::info!("Hub listener started on {}:{}", bind_addr, port);
+
+    Ok(ListenerStatusResponse {
+        running: true,
+        port: Some(port),
+        bind_addr: Some(bind_addr),
+        active_sessions: 0,
+    })
+}
+
+/// Stop the Hub listener
+#[tauri::command]
+pub async fn stop_hub_listener(state: State<'_, ListenerState>) -> Result<bool, String> {
+    let mut listener_guard = state.listener.write().await;
+
+    if let Some(mut listener) = listener_guard.take() {
+        listener.stop().await;
+        tracing::info!("Hub listener stopped");
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Get the current status of the Hub listener
+#[tauri::command]
+pub async fn get_listener_status(state: State<'_, ListenerState>) -> Result<ListenerStatusResponse, String> {
+    let listener_guard = state.listener.read().await;
+
+    if let Some(ref listener) = *listener_guard {
+        let sessions = listener.get_sessions().await;
+        Ok(ListenerStatusResponse {
+            running: true,
+            port: Some(8443), // Would need to track this in state
+            bind_addr: Some("0.0.0.0".to_string()),
+            active_sessions: sessions.len(),
+        })
+    } else {
+        Ok(ListenerStatusResponse {
+            running: false,
+            port: None,
+            bind_addr: None,
+            active_sessions: 0,
+        })
+    }
+}
+
+/// Register an authentication token for an Agent script
+#[tauri::command]
+pub async fn register_agent_token(
+    script_id: String,
+    token: String,
+    state: State<'_, ListenerState>,
+) -> Result<bool, String> {
+    let mut tokens = state.registered_tokens.write().await;
+    tokens.insert(script_id.clone(), token);
+
+    // Also update the running listener if it exists
+    let mut listener_guard = state.listener.write().await;
+    if let Some(ref mut listener) = *listener_guard {
+        listener
+            .register_token(script_id.clone(), tokens.get(&script_id).unwrap().clone())
+            .await;
+    }
+
+    tracing::debug!("Registered token for script {}", script_id);
+    Ok(true)
+}
+
+/// Get all connected Agent sessions
+#[tauri::command]
+pub async fn get_agent_sessions(state: State<'_, ListenerState>) -> Result<Vec<AgentSession>, String> {
+    let listener_guard = state.listener.read().await;
+
+    if let Some(ref listener) = *listener_guard {
+        Ok(listener.get_sessions().await)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+/// Queue a signed command for an Agent
+#[tauri::command]
+pub async fn queue_agent_command(
+    script_id: String,
+    command: SignedCommand,
+    state: State<'_, ListenerState>,
+) -> Result<bool, String> {
+    let listener_guard = state.listener.read().await;
+
+    if let Some(ref listener) = *listener_guard {
+        listener.queue_command(&script_id, command).await;
+        Ok(true)
+    } else {
+        Err("Listener is not running".to_string())
     }
 }
 
