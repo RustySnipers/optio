@@ -43,7 +43,13 @@ rcgen = { version = "0.13", features = ["pem"] }
 zip = { version = "2.2", default-features = false, features = ["deflate"] }
 toml = "0.8"
 tonic = { workspace = true }
+prost = { workspace = true }
 hyper = "1.5"
+
+# Self-update support
+semver = "1"
+sha2 = "0.10"
+hex = "0.4"
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http2"] }
 http-body-util = "0.1"
 tower = "0.5"

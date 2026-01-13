@@ -652,7 +652,24 @@ if ($LASTEXITCODE -ne 0) {{
 sc.exe description $ServiceName $ServiceDescription | Out-Null
 
 # Configure service recovery (restart on failure)
-sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+# - 1st failure: restart after 5 seconds
+# - 2nd failure: restart after 10 seconds
+# - Subsequent failures: restart after 30 seconds
+# - Reset failure count after 1 day (86400 seconds) of successful operation
+Write-Log "Configuring service recovery options..."
+$failureResult = sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000
+if ($LASTEXITCODE -ne 0) {{
+    Write-Log "Warning: Could not configure service recovery: $failureResult" "WARN"
+}}
+
+# Configure additional service recovery options (run command on failure)
+# This creates a recovery command that logs failures
+$recoveryCmd = "`"$InstallPath\optio-agent.exe`" --status >> `"$InstallPath\recovery.log`" 2>&1"
+sc.exe failureflag $ServiceName 1 | Out-Null
+
+# Enable delayed auto-start for resilience after system boot
+sc.exe config $ServiceName start= delayed-auto | Out-Null
+Write-Log "Service recovery configured: restart on 1st/2nd/subsequent failures" "OK"
 
 Write-Log "Service created" "OK"
 
