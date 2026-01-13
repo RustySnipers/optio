@@ -146,6 +146,21 @@ impl Database {
                 FOREIGN KEY (agent_id) REFERENCES agents(machine_id) ON DELETE CASCADE
             );
 
+            -- Action logs for comprehensive audit trail
+            -- Tracks all actions performed on agents (scripts, terminal sessions, patches)
+            CREATE TABLE IF NOT EXISTS action_logs (
+                id TEXT PRIMARY KEY,
+                agent_id TEXT NOT NULL,
+                action_type TEXT NOT NULL,
+                command_content TEXT,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                timestamp TEXT NOT NULL,
+                user_initiated INTEGER NOT NULL DEFAULT 1,
+                session_id TEXT,
+                metadata_json TEXT,
+                FOREIGN KEY (agent_id) REFERENCES agents(machine_id) ON DELETE CASCADE
+            );
+
             -- Create indexes for performance
             CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);
             CREATE INDEX IF NOT EXISTS idx_script_history_client ON script_history(client_id);
@@ -157,6 +172,9 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_command_history_machine ON command_history(machine_id);
             CREATE INDEX IF NOT EXISTS idx_telemetry_agent ON telemetry_history(agent_id);
             CREATE INDEX IF NOT EXISTS idx_telemetry_timestamp ON telemetry_history(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_action_logs_agent ON action_logs(agent_id);
+            CREATE INDEX IF NOT EXISTS idx_action_logs_timestamp ON action_logs(timestamp);
+            CREATE INDEX IF NOT EXISTS idx_action_logs_action_type ON action_logs(action_type);
         "#)?;
 
         tracing::info!("Database schema initialized");
@@ -753,4 +771,345 @@ pub struct TelemetryStats {
     pub max_ram: f32,
     pub min_ram: f32,
     pub sample_count: i64,
+}
+
+// ============================================================================
+// Action Logs Types and Repository
+// ============================================================================
+
+/// Action type enum for categorizing logged actions
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActionType {
+    ScriptExec,
+    TerminalSession,
+    PatchInstall,
+    ConfigChange,
+    AgentRegistration,
+    AgentDeletion,
+    SystemCommand,
+    FileTransfer,
+}
+
+impl std::fmt::Display for ActionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ActionType::ScriptExec => write!(f, "SCRIPT_EXEC"),
+            ActionType::TerminalSession => write!(f, "TERMINAL_SESSION"),
+            ActionType::PatchInstall => write!(f, "PATCH_INSTALL"),
+            ActionType::ConfigChange => write!(f, "CONFIG_CHANGE"),
+            ActionType::AgentRegistration => write!(f, "AGENT_REGISTRATION"),
+            ActionType::AgentDeletion => write!(f, "AGENT_DELETION"),
+            ActionType::SystemCommand => write!(f, "SYSTEM_COMMAND"),
+            ActionType::FileTransfer => write!(f, "FILE_TRANSFER"),
+        }
+    }
+}
+
+impl From<&str> for ActionType {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "SCRIPT_EXEC" => ActionType::ScriptExec,
+            "TERMINAL_SESSION" => ActionType::TerminalSession,
+            "PATCH_INSTALL" => ActionType::PatchInstall,
+            "CONFIG_CHANGE" => ActionType::ConfigChange,
+            "AGENT_REGISTRATION" => ActionType::AgentRegistration,
+            "AGENT_DELETION" => ActionType::AgentDeletion,
+            "SYSTEM_COMMAND" => ActionType::SystemCommand,
+            "FILE_TRANSFER" => ActionType::FileTransfer,
+            _ => ActionType::SystemCommand,
+        }
+    }
+}
+
+/// Action status enum
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum ActionStatus {
+    Success,
+    Failure,
+    Pending,
+    InProgress,
+    Cancelled,
+}
+
+impl std::fmt::Display for ActionStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ActionStatus::Success => write!(f, "SUCCESS"),
+            ActionStatus::Failure => write!(f, "FAILURE"),
+            ActionStatus::Pending => write!(f, "PENDING"),
+            ActionStatus::InProgress => write!(f, "IN_PROGRESS"),
+            ActionStatus::Cancelled => write!(f, "CANCELLED"),
+        }
+    }
+}
+
+impl From<&str> for ActionStatus {
+    fn from(s: &str) -> Self {
+        match s.to_uppercase().as_str() {
+            "SUCCESS" => ActionStatus::Success,
+            "FAILURE" => ActionStatus::Failure,
+            "PENDING" => ActionStatus::Pending,
+            "IN_PROGRESS" => ActionStatus::InProgress,
+            "CANCELLED" => ActionStatus::Cancelled,
+            _ => ActionStatus::Pending,
+        }
+    }
+}
+
+/// Action log entry
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActionLog {
+    pub id: String,
+    pub agent_id: String,
+    pub action_type: ActionType,
+    pub command_content: Option<String>,
+    pub status: ActionStatus,
+    pub timestamp: String,
+    pub user_initiated: bool,
+    pub session_id: Option<String>,
+    pub metadata_json: Option<String>,
+}
+
+impl ActionLog {
+    /// Create a new action log entry
+    pub fn new(
+        agent_id: String,
+        action_type: ActionType,
+        command_content: Option<String>,
+        user_initiated: bool,
+    ) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            agent_id,
+            action_type,
+            command_content,
+            status: ActionStatus::Pending,
+            timestamp: Utc::now().to_rfc3339(),
+            user_initiated,
+            session_id: None,
+            metadata_json: None,
+        }
+    }
+
+    /// Create with a session ID
+    pub fn with_session(mut self, session_id: String) -> Self {
+        self.session_id = Some(session_id);
+        self
+    }
+
+    /// Create with metadata
+    pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.metadata_json = Some(metadata.to_string());
+        self
+    }
+
+    /// Set status
+    pub fn with_status(mut self, status: ActionStatus) -> Self {
+        self.status = status;
+        self
+    }
+}
+
+/// Repository for action log CRUD operations
+pub struct ActionLogRepository<'a> {
+    db: &'a Database,
+}
+
+impl<'a> ActionLogRepository<'a> {
+    pub fn new(db: &'a Database) -> Self {
+        ActionLogRepository { db }
+    }
+
+    /// Insert a new action log
+    pub fn insert(&self, log: &ActionLog) -> OptioResult<()> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        conn.execute(
+            r#"
+            INSERT INTO action_logs (id, agent_id, action_type, command_content, status, timestamp, user_initiated, session_id, metadata_json)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "#,
+            params![
+                log.id,
+                log.agent_id,
+                log.action_type.to_string(),
+                log.command_content,
+                log.status.to_string(),
+                log.timestamp,
+                log.user_initiated as i32,
+                log.session_id,
+                log.metadata_json,
+            ],
+        )?;
+
+        tracing::debug!("Inserted action log: {} ({})", log.id, log.action_type);
+        Ok(())
+    }
+
+    /// Update the status of an action log
+    pub fn update_status(&self, id: &str, status: ActionStatus) -> OptioResult<bool> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let updated = conn.execute(
+            "UPDATE action_logs SET status = ?2 WHERE id = ?1",
+            params![id, status.to_string()],
+        )?;
+
+        Ok(updated > 0)
+    }
+
+    /// Get action logs for a specific agent
+    pub fn get_by_agent(&self, agent_id: &str, limit: u32) -> OptioResult<Vec<ActionLog>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, agent_id, action_type, command_content, status, timestamp, user_initiated, session_id, metadata_json
+            FROM action_logs
+            WHERE agent_id = ?1
+            ORDER BY timestamp DESC
+            LIMIT ?2
+            "#
+        )?;
+
+        let logs = stmt.query_map(params![agent_id, limit], |row| {
+            Ok(ActionLog {
+                id: row.get(0)?,
+                agent_id: row.get(1)?,
+                action_type: ActionType::from(row.get::<_, String>(2)?.as_str()),
+                command_content: row.get(3)?,
+                status: ActionStatus::from(row.get::<_, String>(4)?.as_str()),
+                timestamp: row.get(5)?,
+                user_initiated: row.get::<_, i32>(6)? != 0,
+                session_id: row.get(7)?,
+                metadata_json: row.get(8)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(logs)
+    }
+
+    /// Get all action logs with optional filters
+    pub fn list(&self, agent_id: Option<&str>, limit: u32) -> OptioResult<Vec<ActionLog>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let (query, params): (&str, Vec<Box<dyn rusqlite::ToSql>>) = if let Some(aid) = agent_id {
+            (
+                r#"
+                SELECT id, agent_id, action_type, command_content, status, timestamp, user_initiated, session_id, metadata_json
+                FROM action_logs
+                WHERE agent_id = ?1
+                ORDER BY timestamp DESC
+                LIMIT ?2
+                "#,
+                vec![Box::new(aid.to_string()) as Box<dyn rusqlite::ToSql>, Box::new(limit)],
+            )
+        } else {
+            (
+                r#"
+                SELECT id, agent_id, action_type, command_content, status, timestamp, user_initiated, session_id, metadata_json
+                FROM action_logs
+                ORDER BY timestamp DESC
+                LIMIT ?1
+                "#,
+                vec![Box::new(limit) as Box<dyn rusqlite::ToSql>],
+            )
+        };
+
+        let mut stmt = conn.prepare(query)?;
+
+        let logs = stmt.query_map(rusqlite::params_from_iter(params.iter()), |row| {
+            Ok(ActionLog {
+                id: row.get(0)?,
+                agent_id: row.get(1)?,
+                action_type: ActionType::from(row.get::<_, String>(2)?.as_str()),
+                command_content: row.get(3)?,
+                status: ActionStatus::from(row.get::<_, String>(4)?.as_str()),
+                timestamp: row.get(5)?,
+                user_initiated: row.get::<_, i32>(6)? != 0,
+                session_id: row.get(7)?,
+                metadata_json: row.get(8)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(logs)
+    }
+
+    /// Get action logs by type
+    pub fn get_by_type(&self, action_type: ActionType, limit: u32) -> OptioResult<Vec<ActionLog>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            r#"
+            SELECT id, agent_id, action_type, command_content, status, timestamp, user_initiated, session_id, metadata_json
+            FROM action_logs
+            WHERE action_type = ?1
+            ORDER BY timestamp DESC
+            LIMIT ?2
+            "#
+        )?;
+
+        let logs = stmt.query_map(params![action_type.to_string(), limit], |row| {
+            Ok(ActionLog {
+                id: row.get(0)?,
+                agent_id: row.get(1)?,
+                action_type: ActionType::from(row.get::<_, String>(2)?.as_str()),
+                command_content: row.get(3)?,
+                status: ActionStatus::from(row.get::<_, String>(4)?.as_str()),
+                timestamp: row.get(5)?,
+                user_initiated: row.get::<_, i32>(6)? != 0,
+                session_id: row.get(7)?,
+                metadata_json: row.get(8)?,
+            })
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+        Ok(logs)
+    }
+
+    /// Delete old action logs (keep last N days)
+    pub fn cleanup_old_logs(&self, days_to_keep: i64) -> OptioResult<usize> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let cutoff = (Utc::now() - chrono::Duration::days(days_to_keep)).to_rfc3339();
+
+        let deleted = conn.execute(
+            "DELETE FROM action_logs WHERE timestamp < ?1",
+            params![cutoff],
+        )?;
+
+        if deleted > 0 {
+            tracing::info!("Cleaned up {} old action logs", deleted);
+        }
+
+        Ok(deleted)
+    }
+
+    /// Get counts by status
+    pub fn count_by_status(&self) -> OptioResult<std::collections::HashMap<String, i64>> {
+        let conn = self.db.conn.lock().map_err(|e| OptioError::Database(e.to_string()))?;
+
+        let mut stmt = conn.prepare(
+            "SELECT status, COUNT(*) FROM action_logs GROUP BY status"
+        )?;
+
+        let mut counts = std::collections::HashMap::new();
+        let rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })?;
+
+        for row in rows.flatten() {
+            counts.insert(row.0, row.1);
+        }
+
+        Ok(counts)
+    }
 }

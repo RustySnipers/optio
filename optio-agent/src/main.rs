@@ -4,6 +4,7 @@
 //! - Sends periodic heartbeats to the Hub with system metrics
 //! - Receives and executes commands from the Hub
 //! - Reports command results back to the Hub
+//! - Provides interactive remote terminal sessions
 //!
 //! Communication is outbound-only (agent "phones home") using mTLS.
 //!
@@ -14,20 +15,32 @@
 //! - Install Service: `optio-agent --install`
 //! - Uninstall Service: `optio-agent --uninstall`
 
+mod terminal;
+
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use clap::Parser;
+use futures::StreamExt;
 use optio_core::proto::collector_client::CollectorClient;
-use optio_core::proto::{ExecuteScriptResponse, HeartbeatRequest, PendingCommand};
+use optio_core::proto::terminal_service_server::{TerminalService, TerminalServiceServer};
+use optio_core::proto::{
+    ExecuteScriptResponse, HeartbeatRequest, PendingCommand, TerminalInput, TerminalOutput,
+    TerminalStarted, TerminalOutputData, TerminalEnded, TerminalError as ProtoTerminalError,
+};
+use terminal::{TerminalConfig, TerminalManager, TerminalOutputEvent};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::mpsc as tokio_mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use sysinfo::System;
 use thiserror::Error;
 use tokio::process::Command;
 use tokio::time::{interval, timeout};
-use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Identity, Server, ServerTlsConfig};
 use tracing::{debug, error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
@@ -723,6 +736,244 @@ impl HubClient {
         }
 
         Ok(response.pending_commands)
+    }
+}
+
+// ============================================================================
+// Terminal gRPC Service Implementation
+// ============================================================================
+
+/// gRPC Terminal Service implementation for interactive shell sessions
+pub struct TerminalServiceImpl {
+    terminal_manager: Arc<TerminalManager>,
+    machine_id: String,
+}
+
+impl TerminalServiceImpl {
+    pub fn new(machine_id: String) -> Self {
+        Self {
+            terminal_manager: Arc::new(TerminalManager::new()),
+            machine_id,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl TerminalService for TerminalServiceImpl {
+    type StartTerminalStream = Pin<
+        Box<dyn futures::Stream<Item = Result<TerminalOutput, tonic::Status>> + Send + 'static>,
+    >;
+
+    async fn start_terminal(
+        &self,
+        request: tonic::Request<tonic::Streaming<TerminalInput>>,
+    ) -> Result<tonic::Response<Self::StartTerminalStream>, tonic::Status> {
+        let mut input_stream = request.into_inner();
+        let terminal_manager = Arc::clone(&self.terminal_manager);
+        let machine_id = self.machine_id.clone();
+
+        // Channel for sending output back to the client
+        let (output_tx, output_rx) = tokio_mpsc::channel::<Result<TerminalOutput, tonic::Status>>(256);
+
+        // Spawn task to handle the terminal session
+        tokio::spawn(async move {
+            let mut session_id: Option<String> = None;
+            let mut pty_output_rx: Option<tokio_mpsc::Receiver<TerminalOutputEvent>> = None;
+
+            loop {
+                tokio::select! {
+                    // Handle incoming input from the client
+                    Some(input_result) = input_stream.next() => {
+                        let input = match input_result {
+                            Ok(i) => i,
+                            Err(e) => {
+                                error!("Error receiving terminal input: {}", e);
+                                break;
+                            }
+                        };
+
+                        // Validate machine_id
+                        if !input.machine_id.is_empty() && input.machine_id != machine_id {
+                            let _ = output_tx.send(Ok(TerminalOutput {
+                                session_id: input.session_id.clone(),
+                                output: Some(optio_core::proto::terminal_output::Output::Error(
+                                    ProtoTerminalError {
+                                        code: "INVALID_MACHINE".to_string(),
+                                        message: "Machine ID mismatch".to_string(),
+                                    }
+                                )),
+                            })).await;
+                            continue;
+                        }
+
+                        match input.input {
+                            // Start a new terminal session
+                            Some(optio_core::proto::terminal_input::Input::Start(start_req)) => {
+                                let sid = input.session_id.clone();
+                                let config = TerminalConfig {
+                                    shell_type: if start_req.shell_type.is_empty() {
+                                        #[cfg(windows)]
+                                        { "powershell".to_string() }
+                                        #[cfg(not(windows))]
+                                        { "bash".to_string() }
+                                    } else {
+                                        start_req.shell_type.clone()
+                                    },
+                                    cols: start_req.cols as u16,
+                                    rows: start_req.rows as u16,
+                                    working_directory: if start_req.working_directory.is_empty() {
+                                        None
+                                    } else {
+                                        Some(start_req.working_directory.clone())
+                                    },
+                                };
+
+                                match terminal_manager.start_session(sid.clone(), config.clone()) {
+                                    Ok(()) => {
+                                        info!(session_id = %sid, "Terminal session created");
+                                        session_id = Some(sid.clone());
+
+                                        // Get the output reader
+                                        if let Ok(rx) = terminal_manager.with_session(&sid, |session| {
+                                            session.start_output_reader()
+                                        }) {
+                                            pty_output_rx = Some(rx);
+                                        }
+
+                                        // Get the PID and send started message
+                                        let (shell_type, pid) = terminal_manager.with_session(&sid, |session| {
+                                            Ok((session.shell_type().to_string(), session.pid()))
+                                        }).unwrap_or(("unknown".to_string(), 0));
+
+                                        let _ = output_tx.send(Ok(TerminalOutput {
+                                            session_id: sid.clone(),
+                                            output: Some(optio_core::proto::terminal_output::Output::Started(
+                                                TerminalStarted {
+                                                    shell_type,
+                                                    pid,
+                                                }
+                                            )),
+                                        })).await;
+                                    }
+                                    Err(e) => {
+                                        error!(session_id = %sid, error = %e, "Failed to start terminal");
+                                        let _ = output_tx.send(Ok(TerminalOutput {
+                                            session_id: sid,
+                                            output: Some(optio_core::proto::terminal_output::Output::Error(
+                                                ProtoTerminalError {
+                                                    code: "START_FAILED".to_string(),
+                                                    message: e.to_string(),
+                                                }
+                                            )),
+                                        })).await;
+                                    }
+                                }
+                            }
+
+                            // Send data to the terminal
+                            Some(optio_core::proto::terminal_input::Input::Data(data)) => {
+                                if let Some(ref sid) = session_id {
+                                    if let Err(e) = terminal_manager.with_session(sid, |session| {
+                                        session.write_input(&data.data)
+                                    }) {
+                                        warn!(session_id = %sid, error = %e, "Failed to write to terminal");
+                                    }
+                                }
+                            }
+
+                            // Resize the terminal
+                            Some(optio_core::proto::terminal_input::Input::Resize(resize)) => {
+                                if let Some(ref sid) = session_id {
+                                    if let Err(e) = terminal_manager.with_session(sid, |session| {
+                                        session.resize(resize.cols as u16, resize.rows as u16)
+                                    }) {
+                                        warn!(session_id = %sid, error = %e, "Failed to resize terminal");
+                                    }
+                                }
+                            }
+
+                            // Handle signal
+                            Some(optio_core::proto::terminal_input::Input::Signal(_signal)) => {
+                                // Signal handling - for now just log
+                                if let Some(ref sid) = session_id {
+                                    debug!(session_id = %sid, "Signal received (not fully implemented)");
+                                }
+                            }
+
+                            // Close the terminal
+                            Some(optio_core::proto::terminal_input::Input::Close(close)) => {
+                                if let Some(ref sid) = session_id {
+                                    info!(session_id = %sid, reason = %close.reason, "Closing terminal session");
+                                    terminal_manager.remove_session(sid);
+                                    let _ = output_tx.send(Ok(TerminalOutput {
+                                        session_id: sid.clone(),
+                                        output: Some(optio_core::proto::terminal_output::Output::Ended(
+                                            TerminalEnded {
+                                                exit_code: 0,
+                                                reason: close.reason,
+                                            }
+                                        )),
+                                    })).await;
+                                }
+                                break;
+                            }
+
+                            None => {}
+                        }
+                    }
+
+                    // Handle output from the PTY
+                    Some(event) = async {
+                        if let Some(ref mut rx) = pty_output_rx {
+                            rx.recv().await
+                        } else {
+                            futures::future::pending::<Option<TerminalOutputEvent>>().await
+                        }
+                    } => {
+                        if let Some(ref sid) = session_id {
+                            match event {
+                                TerminalOutputEvent::Data(data) => {
+                                    let _ = output_tx.send(Ok(TerminalOutput {
+                                        session_id: sid.clone(),
+                                        output: Some(optio_core::proto::terminal_output::Output::Data(
+                                            TerminalOutputData { data }
+                                        )),
+                                    })).await;
+                                }
+                                TerminalOutputEvent::Ended { exit_code, reason } => {
+                                    let _ = output_tx.send(Ok(TerminalOutput {
+                                        session_id: sid.clone(),
+                                        output: Some(optio_core::proto::terminal_output::Output::Ended(
+                                            TerminalEnded { exit_code, reason }
+                                        )),
+                                    })).await;
+                                    terminal_manager.remove_session(sid);
+                                    break;
+                                }
+                                TerminalOutputEvent::Error { code, message } => {
+                                    let _ = output_tx.send(Ok(TerminalOutput {
+                                        session_id: sid.clone(),
+                                        output: Some(optio_core::proto::terminal_output::Output::Error(
+                                            ProtoTerminalError { code, message }
+                                        )),
+                                    })).await;
+                                }
+                            }
+                        }
+                    }
+
+                    else => break,
+                }
+            }
+
+            // Cleanup session on exit
+            if let Some(sid) = session_id {
+                terminal_manager.remove_session(&sid);
+            }
+        });
+
+        let output_stream = ReceiverStream::new(output_rx);
+        Ok(tonic::Response::new(Box::pin(output_stream)))
     }
 }
 

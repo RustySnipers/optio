@@ -1185,3 +1185,79 @@ export interface GenerateInstallerResponse {
   generatedAt: string;
   warnings: string[];
 }
+
+// ============================================================================
+// Terminal Session Types
+// ============================================================================
+
+export interface StartTerminalRequest {
+  agentId: string;
+  agentAddress: string;
+  shellType?: string;
+  cols?: number;
+  rows?: number;
+}
+
+export interface StartTerminalResponse {
+  sessionId: string;
+  success: boolean;
+  error?: string;
+}
+
+export interface TerminalInputRequest {
+  sessionId: string;
+  data: string; // base64 encoded
+}
+
+export interface TerminalResizeRequest {
+  sessionId: string;
+  cols: number;
+  rows: number;
+}
+
+// ============================================================================
+// Audit Log Types
+// ============================================================================
+
+export type ActionType =
+  | "SCRIPT_EXEC"
+  | "TERMINAL_SESSION"
+  | "PATCH_INSTALL"
+  | "CONFIG_CHANGE"
+  | "AGENT_REGISTRATION"
+  | "AGENT_DELETION"
+  | "SYSTEM_COMMAND"
+  | "FILE_TRANSFER";
+
+export type ActionStatus =
+  | "SUCCESS"
+  | "FAILURE"
+  | "PENDING"
+  | "IN_PROGRESS"
+  | "CANCELLED";
+
+export interface ActionLog {
+  id: string;
+  agentId: string;
+  actionType: ActionType;
+  commandContent: string | null;
+  status: ActionStatus;
+  timestamp: string;
+  userInitiated: boolean;
+  sessionId: string | null;
+  metadataJson: string | null;
+}
+
+export interface SendCommandRequest {
+  agentId: string;
+  commandType: string;
+  payloadJson: string;
+  priority?: number;
+  timeoutSeconds?: number;
+}
+
+export interface SendCommandResponse {
+  commandId: string;
+  success: boolean;
+  message: string;
+}

@@ -17,6 +17,119 @@ service CommandService {
   rpc ExecuteScript(ExecuteScriptRequest) returns (ExecuteScriptResponse);
 }
 
+// Terminal service for interactive remote shell sessions
+service TerminalService {
+  // Start an interactive terminal session with bidirectional streaming
+  // Input: stream of keyboard input and control signals
+  // Output: stream of terminal output (stdout/stderr)
+  rpc StartTerminal(stream TerminalInput) returns (stream TerminalOutput);
+}
+
+// ============================================================================
+// Terminal Session Messages
+// ============================================================================
+
+message TerminalInput {
+  // Unique session ID for this terminal connection
+  string session_id = 1;
+
+  // Machine ID of the target agent
+  string machine_id = 2;
+
+  // Input type discriminator
+  oneof input {
+    // Start a new terminal session
+    TerminalStartRequest start = 3;
+    // Send keyboard input to the terminal
+    TerminalData data = 4;
+    // Resize the terminal window
+    TerminalResize resize = 5;
+    // Signal to the terminal (e.g., SIGINT)
+    TerminalSignal signal = 6;
+    // Close the terminal session
+    TerminalClose close = 7;
+  }
+}
+
+message TerminalStartRequest {
+  // Shell type: "powershell", "cmd", "bash", "sh"
+  string shell_type = 1;
+
+  // Initial terminal dimensions
+  uint32 cols = 2;
+  uint32 rows = 3;
+
+  // Working directory (optional)
+  string working_directory = 4;
+
+  // Environment variables (JSON object)
+  string environment_json = 5;
+}
+
+message TerminalData {
+  // Raw input bytes (keyboard input)
+  bytes data = 1;
+}
+
+message TerminalResize {
+  // New terminal dimensions
+  uint32 cols = 1;
+  uint32 rows = 2;
+}
+
+message TerminalSignal {
+  // Signal name: "SIGINT", "SIGTERM", "SIGKILL", etc.
+  string signal = 1;
+}
+
+message TerminalClose {
+  // Reason for closing (optional)
+  string reason = 1;
+}
+
+message TerminalOutput {
+  // Session ID this output belongs to
+  string session_id = 1;
+
+  // Output type discriminator
+  oneof output {
+    // Terminal session started successfully
+    TerminalStarted started = 2;
+    // Terminal output data
+    TerminalOutputData data = 3;
+    // Terminal session ended
+    TerminalEnded ended = 4;
+    // Error occurred
+    TerminalError error = 5;
+  }
+}
+
+message TerminalStarted {
+  // Actual shell type that was started
+  string shell_type = 1;
+  // Process ID of the shell
+  uint32 pid = 2;
+}
+
+message TerminalOutputData {
+  // Raw output bytes from the terminal
+  bytes data = 1;
+}
+
+message TerminalEnded {
+  // Exit code of the shell process
+  int32 exit_code = 1;
+  // Reason for termination
+  string reason = 2;
+}
+
+message TerminalError {
+  // Error code
+  string code = 1;
+  // Error message
+  string message = 2;
+}
+
 // ============================================================================
 // Scan Result Messages
 // ============================================================================

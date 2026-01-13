@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { listClients, getSystemInfo, getAgents, getAgentStats, refreshAgentStatus, generateAgentInstaller, getAgentHistory } from "@/lib/commands";
 import type { Client, SystemInfo, Agent, AgentStats, TelemetryRecord, GenerateInstallerRequest } from "@/types";
+import { AgentDetailModal } from "@/components/AgentDetailModal";
 import {
   Users,
   FileCode,
@@ -16,6 +17,7 @@ import {
   Download,
   X,
   BarChart3,
+  ExternalLink,
 } from "lucide-react";
 
 interface StatCardProps {
@@ -124,12 +126,15 @@ function TelemetrySparkline({ data, color = "optio" }: { data: number[]; color?:
   );
 }
 
-function AgentCard({ agent, telemetry }: { agent: Agent; telemetry?: TelemetryRecord[] }) {
+function AgentCard({ agent, telemetry, onClick }: { agent: Agent; telemetry?: TelemetryRecord[]; onClick?: () => void }) {
   const cpuData = telemetry?.slice(0, 20).reverse().map(t => t.cpuPercent) || [];
   const ramData = telemetry?.slice(0, 20).reverse().map(t => t.ramPercent) || [];
 
   return (
-    <div className="bg-slate-700/30 rounded-lg p-4 space-y-3">
+    <div
+      onClick={onClick}
+      className="bg-slate-700/30 rounded-lg p-4 space-y-3 cursor-pointer hover:bg-slate-700/50 transition-colors group"
+    >
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg ${agent.status === "online" ? "bg-green-500/20" : "bg-slate-600/50"}`}>
@@ -140,7 +145,10 @@ function AgentCard({ agent, telemetry }: { agent: Agent; telemetry?: TelemetryRe
             )}
           </div>
           <div>
-            <p className="text-white font-medium">{agent.hostname}</p>
+            <p className="text-white font-medium flex items-center gap-2">
+              {agent.hostname}
+              <ExternalLink className="w-3 h-3 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+            </p>
             <p className="text-xs text-slate-500 font-mono">{agent.machineId.slice(0, 8)}...</p>
           </div>
         </div>
@@ -333,6 +341,7 @@ export function Dashboard() {
   const [agentTelemetry, setAgentTelemetry] = useState<Record<string, TelemetryRecord[]>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [showInstallerModal, setShowInstallerModal] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
 
   const loadAgents = useCallback(async () => {
     try {
@@ -468,6 +477,7 @@ export function Dashboard() {
                 key={agent.machineId}
                 agent={agent}
                 telemetry={agentTelemetry[agent.machineId]}
+                onClick={() => setSelectedAgent(agent)}
               />
             ))}
           </div>
@@ -550,6 +560,15 @@ export function Dashboard() {
         isOpen={showInstallerModal}
         onClose={() => setShowInstallerModal(false)}
       />
+
+      {/* Agent Detail Modal */}
+      {selectedAgent && (
+        <AgentDetailModal
+          agent={selectedAgent}
+          isOpen={!!selectedAgent}
+          onClose={() => setSelectedAgent(null)}
+        />
+      )}
     </div>
   );
 }

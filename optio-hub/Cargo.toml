@@ -36,6 +36,7 @@ hostname = "0.4"
 whoami = "1.5"
 ipnetwork = "0.20"
 futures = "0.3"
+tokio-stream = "0.1"
 printpdf = "0.7"
 optio-core = { path = "../optio-core" }
 rcgen = { version = "0.13", features = ["pem"] }
