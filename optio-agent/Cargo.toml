@@ -67,6 +67,9 @@ hex = "0.4"
 # Semver for version comparison
 semver = "1"
 
+# Random number generation for jitter (Thundering Herd protection)
+rand = "0.8"
+
 # Windows Service support (Windows only)
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7"

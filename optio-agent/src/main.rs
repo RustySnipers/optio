@@ -22,6 +22,7 @@ use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use clap::Parser;
 use futures::StreamExt;
+use rand::Rng;
 use update::UpdateConfig;
 use optio_core::proto::collector_client::CollectorClient;
 use optio_core::proto::terminal_service_server::{TerminalService, TerminalServiceServer};
@@ -1036,6 +1037,15 @@ impl Agent {
 
         // Connect to hub
         let mut client = self.connect().await?;
+
+        // Thundering Herd Protection: Add initial startup jitter
+        // This prevents all agents from sending heartbeats at exactly the same time
+        // after a mass restart (e.g., power outage recovery, mass deployment)
+        let startup_jitter = rand::thread_rng().gen_range(0..30); // 0-30 seconds
+        if startup_jitter > 0 {
+            info!("Initial heartbeat delay: {}s (jitter for load distribution)", startup_jitter);
+            tokio::time::sleep(Duration::from_secs(startup_jitter)).await;
+        }
 
         // Main heartbeat loop
         let mut heartbeat_interval = interval(Duration::from_secs(self.config.agent.heartbeat_interval));
