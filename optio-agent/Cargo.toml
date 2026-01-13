@@ -42,6 +42,9 @@ base64 = "0.22"
 # Configuration file parsing
 toml = "0.8"
 
+# Date/time for panic logs
+chrono = { version = "0.4", features = ["serde"] }
+
 # PTY support for interactive terminal sessions
 portable-pty = "0.8"
 
@@ -51,6 +54,22 @@ prost = { workspace = true }
 # Command line argument parsing
 clap = { version = "4", features = ["derive"] }
 
+# HTTP client for updates
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+
+# Self-replacement for binary updates
+self-replace = "1.4"
+
+# SHA256 verification
+sha2 = "0.10"
+hex = "0.4"
+
+# Semver for version comparison
+semver = "1"
+
 # Windows Service support (Windows only)
 [target.'cfg(windows)'.dependencies]
 windows-service = "0.7"
+
+[dev-dependencies]
+tempfile = "3"

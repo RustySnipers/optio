@@ -25,6 +25,17 @@ service TerminalService {
   rpc StartTerminal(stream TerminalInput) returns (stream TerminalOutput);
 }
 
+// Update service for agent self-update (Phoenix module)
+service UpdateService {
+  // Check for available updates
+  // Returns the latest version info and SHA256 hash
+  rpc CheckVersion(CheckVersionRequest) returns (CheckVersionResponse);
+
+  // Download the latest agent binary
+  // Returns the binary as a stream of chunks for large file support
+  rpc GetAgentBinary(GetAgentBinaryRequest) returns (stream BinaryChunk);
+}
+
 // ============================================================================
 // Terminal Session Messages
 // ============================================================================
@@ -313,4 +324,76 @@ message CommandResult {
   // Execution timestamps
   uint64 started_at = 7;
   uint64 finished_at = 8;
+}
+
+// ============================================================================
+// Update Service Messages (Phoenix Module)
+// ============================================================================
+
+message CheckVersionRequest {
+  // Current agent version (semver format)
+  string current_version = 1;
+
+  // Machine ID for tracking
+  string machine_id = 2;
+
+  // Target platform (e.g., "windows", "linux", "macos")
+  string platform = 3;
+
+  // Target architecture (e.g., "x86_64", "aarch64")
+  string architecture = 4;
+}
+
+message CheckVersionResponse {
+  // Whether an update is available
+  bool update_available = 1;
+
+  // Latest available version (semver format)
+  string latest_version = 2;
+
+  // SHA256 hash of the latest binary (hex-encoded)
+  string sha256 = 3;
+
+  // Size of the binary in bytes
+  uint64 size_bytes = 4;
+
+  // Optional release notes (markdown)
+  string release_notes = 5;
+
+  // Whether this is a mandatory/critical update
+  bool mandatory = 6;
+
+  // Minimum version required to update (for breaking changes)
+  string minimum_version = 7;
+}
+
+message GetAgentBinaryRequest {
+  // Target version to download (empty for latest)
+  string version = 1;
+
+  // Machine ID for tracking/auditing
+  string machine_id = 2;
+
+  // Target platform
+  string platform = 3;
+
+  // Target architecture
+  string architecture = 4;
+}
+
+message BinaryChunk {
+  // Chunk sequence number (0-indexed)
+  uint32 chunk_number = 1;
+
+  // Total number of chunks
+  uint32 total_chunks = 2;
+
+  // Binary data for this chunk
+  bytes data = 3;
+
+  // SHA256 hash of this chunk (for incremental verification)
+  string chunk_hash = 4;
+
+  // Total file size in bytes
+  uint64 total_size = 5;
 }

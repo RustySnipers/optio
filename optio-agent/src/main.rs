@@ -16,11 +16,13 @@
 //! - Uninstall Service: `optio-agent --uninstall`
 
 mod terminal;
+mod update;
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use clap::Parser;
 use futures::StreamExt;
+use update::UpdateConfig;
 use optio_core::proto::collector_client::CollectorClient;
 use optio_core::proto::terminal_service_server::{TerminalService, TerminalServiceServer};
 use optio_core::proto::{
@@ -1018,6 +1020,20 @@ impl Agent {
             "Starting Optio Agent"
         );
 
+        // Start the update loop in the background
+        let update_config = UpdateConfig {
+            hub_address: self.config.agent.hub_address.replace("grpc://", "http://").replace(":50051", ":8080"),
+            check_interval: Duration::from_secs(3600), // 1 hour
+            current_exe: std::env::current_exe().unwrap_or_default(),
+            ca_cert_path: self.config.tls.ca_path.clone(),
+            client_cert_path: self.config.tls.cert_path.clone(),
+            client_key_path: self.config.tls.key_path.clone(),
+            enabled: true,
+        };
+
+        let _update_handle = update::spawn_update_loop(update_config);
+        info!("Update loop started (checking every hour)");
+
         // Connect to hub
         let mut client = self.connect().await?;
 
@@ -1312,7 +1328,73 @@ mod windows_service_impl {
 // Entry Point
 // ============================================================================
 
+/// Set up a custom panic hook that logs to a file before crashing.
+/// This allows us to debug remote failures by examining panic.log.
+fn setup_panic_hook() {
+    let default_hook = std::panic::take_hook();
+
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Try to write to panic.log
+        let panic_log_path = if cfg!(windows) {
+            std::path::PathBuf::from(r"C:\Program Files\Optio\panic.log")
+        } else {
+            std::path::PathBuf::from("/var/log/optio/panic.log")
+        };
+
+        // Ensure directory exists
+        if let Some(parent) = panic_log_path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+
+        // Format the panic message
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        let location = if let Some(loc) = panic_info.location() {
+            format!("{}:{}:{}", loc.file(), loc.line(), loc.column())
+        } else {
+            "unknown".to_string()
+        };
+
+        let payload = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic payload".to_string()
+        };
+
+        let panic_message = format!(
+            "[{}] PANIC at {}\n  Message: {}\n  Agent Version: {}\n  OS: {} {}\n\n",
+            timestamp,
+            location,
+            payload,
+            AGENT_VERSION,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+        );
+
+        // Append to panic log
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&panic_log_path)
+        {
+            use std::io::Write;
+            let _ = file.write_all(panic_message.as_bytes());
+            let _ = file.sync_all();
+        }
+
+        // Also log via tracing if available
+        tracing::error!("PANIC: {} at {}", payload, location);
+
+        // Call the default hook to print to stderr
+        default_hook(panic_info);
+    }));
+}
+
 fn main() -> Result<()> {
+    // Set up panic hook FIRST, before anything else
+    setup_panic_hook();
+
     let args = Args::parse();
 
     // Handle service mode (called by Windows SCM)

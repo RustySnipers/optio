@@ -272,7 +272,7 @@ impl K8sHardeningCategory {
             K8sHardeningCategory::ThreatDetection,
             K8sHardeningCategory::SupplyChain,
             K8sHardeningCategory::Secrets,
-        }
+        ]
     }
 }
 

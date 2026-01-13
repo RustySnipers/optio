@@ -10,6 +10,7 @@ pub mod error;
 pub mod db;
 pub mod grpc;
 pub mod terminal;
+pub mod update_server;
 
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
