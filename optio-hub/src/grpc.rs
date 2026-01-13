@@ -284,6 +284,24 @@ pub async fn start_grpc_server(addr: SocketAddr) -> Result<(), tonic::transport:
         .await
 }
 
+/// Start the gRPC server with graceful shutdown support
+///
+/// The shutdown signal will be triggered when the provided future completes.
+pub async fn start_grpc_server_with_shutdown(
+    addr: SocketAddr,
+    shutdown_signal: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<(), tonic::transport::Error> {
+    tracing::warn!("Starting gRPC server WITHOUT TLS - for development only!");
+    tracing::info!("gRPC server listening on {} (graceful shutdown enabled)", addr);
+
+    tonic::transport::Server::builder()
+        .add_service(CollectorServer::new(CollectorService::new(Arc::new(
+            Database::open(&PathBuf::from(":memory:")).expect("in-memory db"),
+        ))))
+        .serve_with_shutdown(addr, shutdown_signal)
+        .await
+}
+
 /// Start the gRPC server with a shared database connection
 pub async fn start_grpc_server_with_db(
     addr: SocketAddr,

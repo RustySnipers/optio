@@ -22,8 +22,20 @@ impl Database {
     pub fn open(path: &PathBuf) -> OptioResult<Self> {
         let conn = Connection::open(path)?;
 
-        // Enable WAL mode for better concurrent access
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        // Production database hardening:
+        // - WAL mode: Allows readers (Frontend) to not block writers (Agents)
+        // - synchronous=NORMAL: Good balance of safety and performance for WAL
+        // - foreign_keys=ON: Enforce referential integrity
+        // - busy_timeout=5000: Wait up to 5 seconds on lock contention to prevent
+        //   "database is locked" errors under concurrent load
+        conn.execute_batch("
+            PRAGMA journal_mode = WAL;
+            PRAGMA synchronous = NORMAL;
+            PRAGMA foreign_keys = ON;
+            PRAGMA busy_timeout = 5000;
+        ")?;
+
+        tracing::debug!("Database opened with WAL mode and busy_timeout=5000ms");
 
         Ok(Database {
             conn: Mutex::new(conn),

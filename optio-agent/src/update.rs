@@ -14,6 +14,7 @@
 //! - Update server endpoint is authenticated via client certificates
 
 use anyhow::{Context, Result};
+use rand::Rng;
 use reqwest::Client;
 use semver::Version;
 use sha2::{Digest, Sha256};
@@ -22,7 +23,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::time::Duration;
 use thiserror::Error;
-use tokio::time::interval;
+use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 /// Current agent version
@@ -324,27 +325,33 @@ impl UpdateManager {
     }
 
     /// Run the update loop (should be spawned as a background task)
+    ///
+    /// Uses jitter to prevent the "Thundering Herd" problem where all agents
+    /// check for updates simultaneously after a power outage or deployment.
     pub async fn run_update_loop(&self) {
         if !self.config.enabled {
             info!("Updates are disabled");
             return;
         }
 
+        let base_interval_secs = self.config.check_interval.as_secs();
         info!(
-            "Starting update loop (interval: {:?})",
-            self.config.check_interval
+            "Starting update loop (base interval: {}s with up to 600s jitter)",
+            base_interval_secs
         );
 
-        let mut check_interval = interval(self.config.check_interval);
+        // Initial jitter: randomize the first check to spread out agents
+        // that start at the same time (e.g., after mass deployment or power restoration)
+        let initial_jitter = rand::thread_rng().gen_range(0..300); // 0-5 mins
+        info!("Initial update check in {}s (with jitter)", initial_jitter);
+        sleep(Duration::from_secs(initial_jitter)).await;
 
         loop {
-            check_interval.tick().await;
-
             match self.perform_update().await {
                 Ok(true) => {
                     info!("Update applied successfully. Exiting for restart...");
                     // Give a moment for logs to flush
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    sleep(Duration::from_secs(1)).await;
                     // Exit gracefully - Windows Service Manager will restart us
                     std::process::exit(0);
                 }
@@ -356,6 +363,13 @@ impl UpdateManager {
                     // Continue running, will retry next interval
                 }
             }
+
+            // Add jitter to the interval: base interval + 0-10 minutes of random delay
+            // This prevents all agents from hammering the server at exactly the same time
+            let jitter = rand::thread_rng().gen_range(0..600); // 0-10 mins
+            let next_check = base_interval_secs + jitter;
+            debug!("Next update check in {}s (base: {}s + jitter: {}s)", next_check, base_interval_secs, jitter);
+            sleep(Duration::from_secs(next_check)).await;
         }
     }
 }
