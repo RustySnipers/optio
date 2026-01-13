@@ -9,6 +9,7 @@ pub mod reporting;
 pub mod error;
 pub mod db;
 pub mod grpc;
+pub mod terminal;
 
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -33,6 +34,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .manage(commands::network::NetworkState::default())
         .manage(commands::reporting::ReportingState::default())
+        .manage(terminal::create_terminal_state())
         .setup(|app| {
             // Initialize the database on startup
             let app_handle = app.handle().clone();
@@ -151,6 +153,20 @@ pub fn run() {
             commands::agents::get_agent_history,
             commands::agents::get_agent_telemetry_stats,
             commands::agents::cleanup_telemetry,
+            // Audit log commands
+            commands::agents::send_agent_command,
+            commands::agents::get_audit_logs,
+            commands::agents::get_agent_audit_logs,
+            commands::agents::get_audit_logs_by_type,
+            commands::agents::update_audit_log_status,
+            commands::agents::cleanup_audit_logs,
+            // Terminal commands
+            commands::terminal::start_terminal_session,
+            commands::terminal::terminal_send_input,
+            commands::terminal::terminal_resize,
+            commands::terminal::close_terminal_session,
+            commands::terminal::terminal_session_exists,
+            commands::terminal::get_terminal_session_count,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

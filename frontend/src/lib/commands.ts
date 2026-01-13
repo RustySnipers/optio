@@ -75,6 +75,15 @@ import type {
   // Installer types
   GenerateInstallerRequest,
   GenerateInstallerResponse,
+  // Terminal types
+  StartTerminalRequest,
+  StartTerminalResponse,
+  TerminalInputRequest,
+  TerminalResizeRequest,
+  // Audit log types
+  ActionLog,
+  SendCommandRequest,
+  SendCommandResponse,
 } from "@/types";
 
 // ============================================================================
@@ -834,4 +843,128 @@ export async function generateAgentInstaller(
   request: GenerateInstallerRequest
 ): Promise<GenerateInstallerResponse> {
   return invoke<GenerateInstallerResponse>("generate_agent_installer", { request });
+}
+
+// ============================================================================
+// Terminal Session Commands
+// ============================================================================
+
+/**
+ * Start a new interactive terminal session with an agent
+ */
+export async function startTerminalSession(
+  request: StartTerminalRequest
+): Promise<StartTerminalResponse> {
+  return invoke<StartTerminalResponse>("start_terminal_session", { request });
+}
+
+/**
+ * Send input to a terminal session (data should be base64 encoded)
+ */
+export async function terminalSendInput(
+  request: TerminalInputRequest
+): Promise<boolean> {
+  return invoke<boolean>("terminal_send_input", { request });
+}
+
+/**
+ * Resize a terminal session
+ */
+export async function terminalResize(
+  request: TerminalResizeRequest
+): Promise<boolean> {
+  return invoke<boolean>("terminal_resize", { request });
+}
+
+/**
+ * Close a terminal session
+ */
+export async function closeTerminalSession(
+  sessionId: string,
+  reason?: string
+): Promise<boolean> {
+  return invoke<boolean>("close_terminal_session", { sessionId, reason: reason ?? null });
+}
+
+/**
+ * Check if a terminal session exists
+ */
+export async function terminalSessionExists(sessionId: string): Promise<boolean> {
+  return invoke<boolean>("terminal_session_exists", { sessionId });
+}
+
+/**
+ * Get the count of active terminal sessions
+ */
+export async function getTerminalSessionCount(): Promise<number> {
+  return invoke<number>("get_terminal_session_count");
+}
+
+// ============================================================================
+// Audit Log Commands
+// ============================================================================
+
+/**
+ * Send a command to an agent
+ */
+export async function sendAgentCommand(
+  request: SendCommandRequest
+): Promise<SendCommandResponse> {
+  return invoke<SendCommandResponse>("send_agent_command", { request });
+}
+
+/**
+ * Get audit logs with optional filtering
+ */
+export async function getAuditLogs(
+  agentId?: string,
+  limit?: number
+): Promise<ActionLog[]> {
+  return invoke<ActionLog[]>("get_audit_logs", {
+    agentId: agentId ?? null,
+    limit: limit ?? null,
+  });
+}
+
+/**
+ * Get audit logs for a specific agent
+ */
+export async function getAgentAuditLogs(
+  agentId: string,
+  limit?: number
+): Promise<ActionLog[]> {
+  return invoke<ActionLog[]>("get_agent_audit_logs", {
+    agentId,
+    limit: limit ?? null,
+  });
+}
+
+/**
+ * Get audit logs by action type
+ */
+export async function getAuditLogsByType(
+  actionType: string,
+  limit?: number
+): Promise<ActionLog[]> {
+  return invoke<ActionLog[]>("get_audit_logs_by_type", {
+    actionType,
+    limit: limit ?? null,
+  });
+}
+
+/**
+ * Update the status of an audit log
+ */
+export async function updateAuditLogStatus(
+  logId: string,
+  status: string
+): Promise<boolean> {
+  return invoke<boolean>("update_audit_log_status", { logId, status });
+}
+
+/**
+ * Cleanup old audit logs
+ */
+export async function cleanupAuditLogs(daysToKeep?: number): Promise<number> {
+  return invoke<number>("cleanup_audit_logs", { daysToKeep: daysToKeep ?? null });
 }

@@ -10,3 +10,4 @@ pub mod infrastructure;
 pub mod network;
 pub mod reporting;
 pub mod system;
+pub mod terminal;

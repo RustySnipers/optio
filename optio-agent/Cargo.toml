@@ -19,6 +19,7 @@ hostname = "0.4"
 
 # Async utilities
 futures = "0.3"
+tokio-stream = "0.1"
 
 # Serialization
 serde = { workspace = true }
@@ -40,6 +41,12 @@ base64 = "0.22"
 
 # Configuration file parsing
 toml = "0.8"
+
+# PTY support for interactive terminal sessions
+portable-pty = "0.8"
+
+# Prost for protobuf types
+prost = { workspace = true }
 
 # Command line argument parsing
 clap = { version = "4", features = ["derive"] }
