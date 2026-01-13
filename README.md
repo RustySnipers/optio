@@ -1,171 +1,182 @@
-# Optio
+Optio Enterprise RMM
 
-**Consultant-in-a-Box**: A high-performance, local-first security toolkit for Enterprise Architects and IT Security Consultants.
+Optio is a high-performance, security-first Remote Monitoring & Management (RMM) platform designed for IT Consultants and MSPs. It replaces bloated, insecure management tools with a lightweight Rust agent and a modern Tauri-based Command Hub.
 
-## Overview
+🏗 Architecture
 
-Optio is a Tauri-based desktop application that provides surgical, framework-agnostic tools for IT consulting engagements. Unlike traditional RMM solutions that are SaaS-dependent and noisy, Optio operates locally with a minimal footprint.
+Optio operates on a Distributed Agent Topology secured by Mutual TLS (mTLS).
 
-### Key Features
+Optio Hub (optio-hub): The Command Center. A local Tauri desktop application (React frontend) that acts as the gRPC Server, Certificate Authority (CA), and Dashboard.
 
-- **The Factory**: Dynamic script generation engine that manufactures unique, state-aware PowerShell scripts for each engagement
-- **GRC Command Center**: Interactive audit, gap analysis, and policy generation (NIST CSF, SOC 2, GDPR)
-- **Network Intelligence**: Asset discovery and vulnerability surfacing via Nmap integration
-- **Local-First Security**: All sensitive data encrypted locally before optional cloud sync
+Optio Agent (optio-agent): The Execution Arm. A headless, self-updating Rust binary that runs as a system service on client endpoints. It polls the Hub for instructions.
 
-## Technology Stack
+Optio Core (optio-core): The Shared Brain. Contains Protocol Buffers (optio.proto), encryption logic, and domain models shared between Hub and Agent.
 
-| Component | Technology | Rationale |
-|-----------|-----------|-----------|
-| Core Runtime | Tauri v2 (Rust) | Minimal footprint (<10MB), high security |
-| Frontend | React + TypeScript | Component modularity, rich UI ecosystem |
-| Styling | Tailwind CSS | Rapid UI development, consistency |
-| Automation | PowerShell Core | Native Windows management |
-| Data Layer | SQLite (Encrypted) | Local storage with AES-256 encryption |
+🚀 Getting Started (The Golden Path)
 
-## Project Structure
+Follow these steps exactly to go from Zero to Heartbeat.
 
-```
-optio/
-├── src-tauri/              # Rust backend
-│   ├── src/
-│   │   ├── commands/       # Tauri command handlers
-│   │   ├── factory/        # Script generation engine
-│   │   ├── db.rs           # SQLite database layer
-│   │   ├── error.rs        # Error types
-│   │   └── lib.rs          # Application entry
-│   └── Cargo.toml
-├── frontend/               # React frontend
-│   ├── src/
-│   │   ├── components/     # React components
-│   │   ├── lib/            # Utilities & Tauri bindings
-│   │   └── types/          # TypeScript interfaces
-│   └── package.json
-└── templates/              # PowerShell templates
-```
+1. Prerequisites
 
-## Getting Started
+Ensure your development environment has the following installed:
 
-### Prerequisites
+Rust (Stable): rustup update stable
 
-- Rust 1.70+ and Cargo
-- Node.js 18+ and npm
-- Tauri CLI v2
+Node.js (v18+): node -v
 
-#### Linux System Dependencies
+Protocol Buffers Compiler (protoc):
 
-```bash
-# Ubuntu/Debian
-sudo apt update
-sudo apt install libwebkit2gtk-4.1-dev \
-  build-essential \
-  curl \
-  wget \
-  file \
-  libxdo-dev \
-  libssl-dev \
-  libayatana-appindicator3-dev \
-  librsvg2-dev
+Windows: choco install protoc
 
-# Fedora
-sudo dnf install webkit2gtk4.1-devel \
-  openssl-devel \
-  curl \
-  wget \
-  file \
-  libxdo-devel \
-  libappindicator-gtk3-devel \
-  librsvg2-devel
+Mac: brew install protobuf
 
-# Arch
-sudo pacman -Syu webkit2gtk-4.1 \
-  base-devel \
-  curl \
-  wget \
-  file \
-  openssl \
-  appmenu-gtk-module \
-  gtk3 \
-  libappindicator-gtk3 \
-  librsvg
-```
+Linux: apt install -y protobuf-compiler
 
-#### macOS
+Build Tools:
 
-Xcode Command Line Tools are required:
-```bash
-xcode-select --install
-```
+Windows: Visual Studio C++ Build Tools.
 
-#### Windows
+Linux: libwebkit2gtk-4.0-dev, build-essential, curl, wget, libssl-dev.
 
-No additional system dependencies required. Visual Studio Build Tools with C++ workload recommended.
+2. Installation & Setup
 
-### Installation
+Clone the repository:
 
-```bash
-# Clone the repository
-git clone https://github.com/RustySnipers/optio.git
+git clone [https://github.com/RustySnipers/optio.git](https://github.com/RustySnipers/optio.git)
 cd optio
 
-# Install dependencies
-npm run install:all
 
-# Run in development mode
-npm run tauri:dev
+Install Frontend Dependencies:
 
-# Build for production
-npm run tauri:build
-```
+npm install
+cd frontend
+npm install
+cd ..
 
-## Modules
 
-### Phase 1: The Factory (Current)
+🔐 CRITICAL STEP: Generate Security Certificates
+Optio will not run without mTLS certificates. Use the helper script to generate a local Development CA.
 
-The Factory is Optio's dynamic client provisioning engine. It generates unique, idempotent PowerShell scripts with:
+Linux/Mac (Bash):
 
-- **Identity Injection**: Consultant's IP/Certificate injected at generation time
-- **State Auditing**: Scripts check existing state before applying changes
-- **Air-Gap Friendly**: Scripts can be delivered via USB/Network share
+chmod +x scripts/generate-test-certs.sh
+./scripts/generate-test-certs.sh
 
-### Phase 2: GRC Command Center (Planned)
 
-- Framework Toggle (NIST CSF 2.0, SOC 2 Type II, GDPR)
-- Evidence Collection & Control Mapping
-- Compliance Gap Heatmaps
+Windows (PowerShell):
 
-### Phase 3: Network Intelligence (Planned)
+# Ensure you have OpenSSL installed (git bash has it)
+./scripts/generate-test-certs.sh
 
-- Nmap wrapper for safe network scanning
-- Asset inventory with OS/Port detection
-- STRIDE threat modeling wizard
 
-## Security Considerations
+This creates a certs/ directory containing ca.pem, server.pem, server.key, client.pem, and client.key.
 
-- **No Telemetry**: Operates assuming a hostile, air-gapped environment
-- **Vault Storage**: Credentials stored using OS Keychain or AES-256 encrypted SQLite
-- **Code Signing**: All binaries and generated scripts are signed
+3. Running the Hub (Server)
 
-## Development
+Start the Tauri application. This will compile the Rust backend and launch the UI.
 
-```bash
-# Run Rust tests
-npm run test:rust
+# From the root directory
+npm run tauri dev
 
-# Type check Rust code
-npm run check:rust
 
-# Lint frontend
-npm run lint
+The Dashboard should appear. You will see "gRPC Server listening on 0.0.0.0:50051" in the terminal logs.
 
-# Development server
-npm run dev
-```
+4. Running a Test Agent
 
-## License
+Open a new terminal window to simulate a client machine.
 
-MIT License - See [LICENSE](LICENSE) for details.
+# Run the agent locally (it will connect to localhost by default)
+cargo run -p optio-agent
 
-## Contributing
 
-Contributions are welcome! Please read the contributing guidelines before submitting pull requests.
+Success Criteria:
+
+The Agent terminal shows: [INFO] Connected to Hub at 127.0.0.1:50051.
+
+The Hub terminal shows: [INFO] New Heartbeat from Agent <UUID>.
+
+The Hub Dashboard (UI) shows "Online Agents: 1".
+
+🎮 Operating the Platform
+
+Generating Deployable Agents
+
+To deploy to a real remote machine:
+
+Go to the "Factory" tab in the Hub.
+
+Enter the Client Name (e.g., "Acme Corp").
+
+Click "Generate Installer".
+
+The Hub will sign a new certificate for this specific agent and bundle it into a .zip file with the optio-agent.exe.
+
+Deploy: Copy the ZIP to the target machine, unzip, and run install.ps1 as Administrator.
+
+Using the Interactive Terminal
+
+Select an active agent from the Dashboard.
+
+Click "Open Terminal".
+
+A live PowerShell session will open. Commands are executed over the encrypted gRPC stream.
+
+Audit Logs
+
+All actions (Script execution, Terminal access, File transfers) are immutable logged.
+
+Navigate to "Reporting Center" -> "Audit Logs" to view the chain of custody.
+
+📦 Production Build & Release
+
+We use GitHub Actions for CI/CD. Do not manually build production binaries unless testing.
+
+Creating a Release
+
+Tag the commit: git tag v1.0.0
+
+Push tag: git push origin v1.0.0
+
+The workflow .github/workflows/release.yml will:
+
+Compile optio-agent (Windows x64).
+
+Compile optio-hub (Windows MSI Installer).
+
+Sign the binaries (if SIGNING_CERT secret is present).
+
+Upload artifacts to GitHub Releases.
+
+Self-Update Mechanism
+
+Agents check for updates every 1 hour (with 0-10m random jitter).
+
+They download the new binary from the Hub's /updates endpoint.
+
+They verify the SHA256 hash.
+
+They perform a "Rename-and-Replace" atomic update and restart the service.
+
+🛠 Troubleshooting
+
+Issue: "Database is locked"
+
+Cause: Too many concurrent writes in SQLite.
+
+Fix: Ensure WAL mode is enabled. The app handles this automatically on startup, but you can verify by checking for optio.db-wal in the app data folder.
+
+Issue: Agent Connection Refused (mTLS Error)
+
+Cause: The Agent's ca.pem does not match the Hub's server.pem.
+
+Fix: Regenerate certs using the script and re-compile or re-copy the certs to the agent's folder.
+
+Issue: "Thundering Herd" (High CPU on Hub)
+
+Cause: 1000 agents connecting at once.
+
+Fix: The agent includes randomization (Jitter) in its heartbeat loop. Do not remove the rand::thread_rng() logic in main.rs.
+
+📜 License
+
+This project is licensed under the MIT License.
