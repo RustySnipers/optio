@@ -293,7 +293,7 @@ fn estimate_host_count(cidr: &str) -> Option<usize> {
     use std::str::FromStr;
     ipnetwork::IpNetwork::from_str(cidr)
         .ok()
-        .map(|net| net.size() as usize)
+        .map(|net| net.iter().count())
 }
 
 // ============================================================================

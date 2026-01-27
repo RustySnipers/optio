@@ -15,6 +15,7 @@
 //! - Install Service: `optio-agent --install`
 //! - Uninstall Service: `optio-agent --uninstall`
 
+mod state;
 mod terminal;
 mod update;
 
@@ -339,7 +340,7 @@ impl SystemCollector {
         let mut system = System::new_all();
         system.refresh_all();
 
-        // Generate a stable machine ID based on hostname and OS
+        // Get hostname
         let hostname = hostname::get()
             .map(|h| h.to_string_lossy().to_string())
             .unwrap_or_else(|_| "unknown".to_string());
@@ -351,9 +352,13 @@ impl SystemCollector {
             System::kernel_version().unwrap_or_else(|| "".to_string()),
         );
 
-        // Create a stable machine ID using UUID5 (deterministic based on hostname + OS)
-        let machine_id = Uuid::new_v5(&MACHINE_ID_NAMESPACE, format!("{}:{}", hostname, os_info).as_bytes())
+        // Generate fallback ID using UUID5 (deterministic based on hostname + OS)
+        let fallback_id = Uuid::new_v5(&MACHINE_ID_NAMESPACE, format!("{}:{}", hostname, os_info).as_bytes())
             .to_string();
+
+        // Load persistent machine ID from disk, or create new one on first run
+        // Falls back to deterministic UUID5 if persistence fails (e.g., no admin rights)
+        let machine_id = state::load_or_create_machine_id(&fallback_id);
 
         Self {
             system,
@@ -444,6 +449,13 @@ impl SystemCollector {
             uptime_seconds: self.uptime_seconds(),
             ip_addresses: self.ip_addresses(),
             timestamp,
+            // Nonce for replay attack prevention
+            nonce: Uuid::new_v4().to_string(),
+            // Client timestamp in milliseconds
+            client_timestamp_ms: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
         }
     }
 

@@ -141,10 +141,8 @@ impl UpdateManager {
             let ca = reqwest::Certificate::from_pem(&ca_cert)
                 .context("Failed to parse CA certificate")?;
 
-            // Create client identity
-            let mut identity_pem = client_cert;
-            identity_pem.extend_from_slice(&client_key);
-            let identity = reqwest::Identity::from_pem(&identity_pem)
+            // Create client identity (native-tls uses from_pkcs8_pem with separate cert and key)
+            let identity = reqwest::Identity::from_pkcs8_pem(&client_cert, &client_key)
                 .context("Failed to create client identity")?;
 
             builder = builder

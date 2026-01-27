@@ -54,8 +54,8 @@ prost = { workspace = true }
 # Command line argument parsing
 clap = { version = "4", features = ["derive"] }
 
-# HTTP client for updates
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
+# HTTP client for updates - using native-tls since rustls requires aws-lc on Windows
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "stream", "json"] }
 
 # Self-replacement for binary updates
 self-replace = "1.4"

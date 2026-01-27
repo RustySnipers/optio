@@ -200,6 +200,14 @@ message HeartbeatRequest {
 
   // Unix timestamp of when this heartbeat was generated
   uint64 timestamp = 12;
+
+  // Unique nonce for replay attack prevention (UUID format)
+  // Each heartbeat must have a unique nonce that the Hub validates
+  string nonce = 13;
+
+  // Client-side timestamp in milliseconds for timing validation
+  // Hub can reject heartbeats with stale timestamps (> 5 min drift)
+  uint64 client_timestamp_ms = 14;
 }
 
 message HeartbeatResponse {

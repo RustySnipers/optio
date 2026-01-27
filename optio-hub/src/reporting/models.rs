@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Type of report to generate
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportType {
     /// High-level summary for executives and stakeholders
@@ -100,7 +100,7 @@ impl ExportFormat {
 }
 
 /// Report status
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReportStatus {
     Draft,

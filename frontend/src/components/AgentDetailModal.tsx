@@ -10,8 +10,8 @@
 import { useState, useEffect } from "react";
 import { Terminal } from "@/components/Terminal";
 import { AuditLogTable } from "@/components/AuditLogTable";
-import { getAgentHistory, getAgentTelemetryStats } from "@/lib/commands";
-import type { Agent, TelemetryRecord, TelemetryStats } from "@/types";
+import { getAgentTelemetryStats } from "@/lib/commands";
+import type { Agent, TelemetryStats } from "@/types";
 import {
   X,
   Terminal as TerminalIcon,
@@ -39,9 +39,7 @@ export function AgentDetailModal({
   onClose,
 }: AgentDetailModalProps) {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [telemetry, setTelemetry] = useState<TelemetryRecord[]>([]);
   const [stats, setStats] = useState<TelemetryStats | null>(null);
-  const [showTerminal, setShowTerminal] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -51,11 +49,7 @@ export function AgentDetailModal({
 
   const loadTelemetry = async () => {
     try {
-      const [history, telemetryStats] = await Promise.all([
-        getAgentHistory(agent.machineId, 50),
-        getAgentTelemetryStats(agent.machineId, 24),
-      ]);
-      setTelemetry(history);
+      const telemetryStats = await getAgentTelemetryStats(agent.machineId, 24);
       setStats(telemetryStats);
     } catch (error) {
       console.error("Failed to load telemetry:", error);

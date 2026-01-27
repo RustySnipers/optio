@@ -6,6 +6,8 @@ import { GRCCommandCenter } from "@/components/GRCCommandCenter";
 import { InfrastructureMigration } from "@/components/InfrastructureMigration";
 import { NetworkIntelligence } from "@/components/NetworkIntelligence";
 import { ReportingCenter } from "@/components/ReportingCenter";
+import { ClientManagement } from "@/components/ClientManagement";
+import { Settings } from "@/components/Settings";
 import { Header } from "@/components/Header";
 import { getSystemInfo } from "@/lib/commands";
 import type { ViewMode, SystemInfo } from "@/types";
@@ -28,12 +30,7 @@ function App() {
       case "factory":
         return <ClientOnboarding />;
       case "clients":
-        return (
-          <div className="p-8">
-            <h2 className="text-2xl font-bold text-white mb-4">Client Management</h2>
-            <p className="text-slate-400">Client management module coming in Phase 2.</p>
-          </div>
-        );
+        return <ClientManagement />;
       case "grc":
         return <GRCCommandCenter />;
       case "infrastructure":
@@ -43,12 +40,7 @@ function App() {
       case "reporting":
         return <ReportingCenter />;
       case "settings":
-        return (
-          <div className="p-8">
-            <h2 className="text-2xl font-bold text-white mb-4">Settings</h2>
-            <p className="text-slate-400">Application settings coming in Phase 2.</p>
-          </div>
-        );
+        return <Settings />;
       default:
         return <ClientOnboarding />;
     }

@@ -4,7 +4,6 @@ import type { Client, SystemInfo, Agent, AgentStats, TelemetryRecord, GenerateIn
 import { AgentDetailModal } from "@/components/AgentDetailModal";
 import {
   Users,
-  FileCode,
   Shield,
   Activity,
   ArrowRight,
@@ -14,9 +13,7 @@ import {
   Wifi,
   WifiOff,
   Package,
-  Download,
   X,
-  BarChart3,
   ExternalLink,
 } from "lucide-react";
 
@@ -37,13 +34,12 @@ function StatCard({ title, value, icon: Icon, change, trend }: StatCardProps) {
           <p className="text-3xl font-bold text-white">{value}</p>
           {change && (
             <p
-              className={`text-sm mt-2 ${
-                trend === "up"
-                  ? "text-secure"
-                  : trend === "down"
+              className={`text-sm mt-2 ${trend === "up"
+                ? "text-secure"
+                : trend === "down"
                   ? "text-critical"
                   : "text-slate-400"
-              }`}
+                }`}
             >
               {change}
             </p>
@@ -57,13 +53,6 @@ function StatCard({ title, value, icon: Icon, change, trend }: StatCardProps) {
   );
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return "0 B";
-  const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB", "TB"];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
-}
 
 function formatUptime(seconds: number): string {
   const days = Math.floor(seconds / 86400);
@@ -389,9 +378,10 @@ export function Dashboard() {
     loadData();
   }, [loadAgents]);
 
-  // Poll for agents every 5 seconds
+  // Poll for agents every 2 seconds (near real-time heartbeat tracking)
+  // Full Tauri event push would require AppHandle sharing with gRPC thread
   useEffect(() => {
-    const interval = setInterval(loadAgents, 5000);
+    const interval = setInterval(loadAgents, 2000);
     return () => clearInterval(interval);
   }, [loadAgents]);
 

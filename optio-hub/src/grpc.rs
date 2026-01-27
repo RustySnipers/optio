@@ -8,7 +8,7 @@ use optio_core::proto::collector_server::{Collector, CollectorServer};
 use optio_core::proto::{
     HeartbeatRequest, HeartbeatResponse, PendingCommand, ScanResult, SubmitScanResultResponse,
 };
-use optio_core::security::{HubTlsConfig, SecurityError};
+use optio_core::security::{HubTlsConfig, NonceValidator, SecurityError};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,6 +19,8 @@ use tonic::{Request, Response, Status};
 /// Shared state for the gRPC service
 pub struct ServiceState {
     pub db: Arc<Database>,
+    /// Nonce validator for replay attack prevention
+    pub nonce_validator: NonceValidator,
 }
 
 /// Collector service implementation with database integration
@@ -29,7 +31,10 @@ pub struct CollectorService {
 impl CollectorService {
     pub fn new(db: Arc<Database>) -> Self {
         Self {
-            state: Arc::new(ServiceState { db }),
+            state: Arc::new(ServiceState { 
+                db,
+                nonce_validator: NonceValidator::new(),
+            }),
         }
     }
 }
@@ -73,6 +78,20 @@ impl Collector for CollectorService {
             ram_usage = %heartbeat.ram_usage,
             "Received heartbeat from agent"
         );
+
+        // Validate nonce for replay attack prevention
+        if let Err(e) = self.state.nonce_validator.validate(
+            &heartbeat.nonce,
+            heartbeat.client_timestamp_ms,
+        ) {
+            tracing::warn!(
+                machine_id = %heartbeat.machine_id,
+                nonce = %heartbeat.nonce,
+                error = %e,
+                "Heartbeat nonce validation failed"
+            );
+            return Err(Status::unauthenticated(format!("Replay protection: {}", e)));
+        }
 
         // Upsert agent in database
         if let Err(e) = upsert_agent(&self.state.db, &heartbeat) {
@@ -369,12 +388,12 @@ pub async fn start_grpc_server_mtls(
     }
 }
 
-async fn handle_grpc_connection<S, B>(
+async fn handle_grpc_connection<S>(
     _tls_stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
     _service: S,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
 where
-    S: tower::Service<http::Request<B>> + Clone + Send + 'static,
+    S: Clone + Send + 'static,
 {
     // This is a placeholder - in production, integrate with tonic's transport layer
     // For now, use tonic's native TLS configuration

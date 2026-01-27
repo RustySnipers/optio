@@ -499,12 +499,7 @@ export async function listAssets(clientId: string): Promise<Asset[]> {
   return invoke<Asset[]>("list_assets", { clientId });
 }
 
-/**
- * Get demo assets for development
- */
-export async function getDemoAssets(clientId: string): Promise<Asset[]> {
-  return invoke<Asset[]>("get_demo_assets", { clientId });
-}
+
 
 /**
  * Get a specific asset by ID
@@ -696,15 +691,7 @@ export async function getReportStats(clientId?: string): Promise<ReportStats> {
   return invoke<ReportStats>("get_report_stats", { clientId: clientId ?? null });
 }
 
-/**
- * Generate demo reports for development
- */
-export async function generateDemoReports(
-  clientId: string,
-  clientName: string
-): Promise<ReportSummary[]> {
-  return invoke<ReportSummary[]>("generate_demo_reports", { clientId, clientName });
-}
+
 
 // ============================================================================
 // GRC Compliance Status Commands (Phase 3)
@@ -737,14 +724,7 @@ export async function generateExecutivePdf(
   return invoke<PdfGenerationResult>("generate_executive_pdf", { request });
 }
 
-/**
- * Generate a demo executive PDF for testing
- */
-export async function generateDemoPdf(
-  clientName: string
-): Promise<PdfGenerationResult> {
-  return invoke<PdfGenerationResult>("generate_demo_pdf", { clientName });
-}
+
 
 /**
  * Open the folder containing the generated PDF

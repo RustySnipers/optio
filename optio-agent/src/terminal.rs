@@ -217,6 +217,9 @@ pub enum TerminalOutputEvent {
 fn get_shell_command(shell_type: &str) -> Result<CommandBuilder> {
     let mut cmd = match shell_type.to_lowercase().as_str() {
         "powershell" => {
+            // Log CLM status for security awareness
+            log_powershell_language_mode();
+            
             let mut c = CommandBuilder::new("powershell.exe");
             c.args(["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass"]);
             c
@@ -227,6 +230,8 @@ fn get_shell_command(shell_type: &str) -> Result<CommandBuilder> {
         #[cfg(windows)]
         _ => {
             // Default to PowerShell on Windows
+            log_powershell_language_mode();
+            
             let mut c = CommandBuilder::new("powershell.exe");
             c.args(["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass"]);
             c
@@ -239,6 +244,75 @@ fn get_shell_command(shell_type: &str) -> Result<CommandBuilder> {
     };
 
     Ok(cmd)
+}
+
+/// Check and log PowerShell Constrained Language Mode (CLM) status
+///
+/// CLM is a security feature in PowerShell that restricts available language 
+/// elements to limit attack surface. When CLM is active:
+/// - .NET types are restricted
+/// - Add-Type and scripts are limited
+/// - Only core cmdlets are available
+///
+/// For the prototype, we log the mode for awareness. In production, this
+/// could gate certain functionality.
+#[cfg(windows)]
+fn log_powershell_language_mode() {
+    use std::process::Command;
+    
+    // Query PowerShell language mode
+    let output = Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            "$ExecutionContext.SessionState.LanguageMode"
+        ])
+        .output();
+    
+    match output {
+        Ok(output) if output.status.success() => {
+            let mode = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            match mode.as_str() {
+                "FullLanguage" => {
+                    info!("PowerShell running in FullLanguage mode (unrestricted)");
+                }
+                "ConstrainedLanguage" => {
+                    warn!(
+                        "PowerShell running in ConstrainedLanguage mode (CLM). \
+                         Some features may be restricted. This is typically due to \
+                         AppLocker, WDAC, or DeviceGuard policies."
+                    );
+                }
+                "RestrictedLanguage" => {
+                    warn!(
+                        "PowerShell running in RestrictedLanguage mode. \
+                         Script execution is heavily restricted."
+                    );
+                }
+                "NoLanguage" => {
+                    warn!("PowerShell running in NoLanguage mode. Scripts cannot run.");
+                }
+                _ => {
+                    debug!("PowerShell language mode: {}", mode);
+                }
+            }
+        }
+        Ok(output) => {
+            debug!(
+                "Could not determine PowerShell language mode: {:?}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Err(e) => {
+            debug!("Failed to query PowerShell language mode: {}", e);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn log_powershell_language_mode() {
+    // No-op on non-Windows platforms
 }
 
 /// Terminal session manager

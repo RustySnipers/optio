@@ -408,30 +408,117 @@ pub struct K8sCategoryResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ResourceType {
-    Compute,
-    Storage,
-    Database,
-    Network,
+    VirtualMachine,
     Container,
+    Database,
+    Storage,
+    Network,
+    Kubernetes,
     Serverless,
+    LoadBalancer,
     Other,
 }
 
 impl ResourceType {
     pub fn display_name(&self) -> &'static str {
         match self {
-            ResourceType::Compute => "Compute (VMs)",
-            ResourceType::Storage => "Storage",
+            ResourceType::VirtualMachine => "Virtual Machine",
+            ResourceType::Container => "Container",
             ResourceType::Database => "Database",
-            ResourceType::Network => "Network/Bandwidth",
-            ResourceType::Container => "Containers/K8s",
+            ResourceType::Storage => "Storage",
+            ResourceType::Network => "Network",
+            ResourceType::Kubernetes => "Kubernetes",
             ResourceType::Serverless => "Serverless",
+            ResourceType::LoadBalancer => "Load Balancer",
             ResourceType::Other => "Other",
         }
     }
 }
 
-/// On-premises resource for cost comparison
+/// Resource specifications for cost estimation
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSpecs {
+    pub vcpus: Option<u32>,
+    pub memory_gb: Option<f64>,
+    pub storage_gb: Option<f64>,
+    pub bandwidth_gbps: Option<f64>,
+    pub iops: Option<u32>,
+}
+
+/// Resource cost estimate for cloud migration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceCostEstimate {
+    pub resource_type: ResourceType,
+    pub name: String,
+    pub quantity: u32,
+    pub specs: ResourceSpecs,
+    pub monthly_cost: f64,
+    pub notes: Option<String>,
+}
+
+/// On-premises cost breakdown
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OnPremiseCosts {
+    pub hardware_monthly: f64,
+    pub software_licensing_monthly: f64,
+    pub datacenter_monthly: f64,
+    pub personnel_monthly: f64,
+    pub maintenance_monthly: f64,
+    pub power_cooling_monthly: f64,
+    pub network_monthly: f64,
+}
+
+impl OnPremiseCosts {
+    pub fn monthly_total(&self) -> f64 {
+        self.hardware_monthly
+            + self.software_licensing_monthly
+            + self.datacenter_monthly
+            + self.personnel_monthly
+            + self.maintenance_monthly
+            + self.power_cooling_monthly
+            + self.network_monthly
+    }
+
+    pub fn annual_total(&self) -> f64 {
+        self.monthly_total() * 12.0
+    }
+}
+
+/// Cost optimization recommendation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CostRecommendation {
+    pub category: String,
+    pub title: String,
+    pub description: String,
+    pub estimated_savings: f64,
+    pub effort: String,
+    pub priority: u32,
+}
+
+/// Complete FinOps analysis result
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FinOpsAnalysis {
+    pub id: String,
+    pub client_id: String,
+    pub analysis_date: String,
+    pub target_provider: CloudProvider,
+    pub migration_strategy: MigrationStrategy,
+    pub current_monthly_cost: f64,
+    pub projected_monthly_cost: f64,
+    pub estimated_savings_percentage: f64,
+    pub migration_cost_estimate: f64,
+    pub roi_months: u32,
+    pub resource_breakdown: Vec<ResourceCostEstimate>,
+    pub recommendations: Vec<CostRecommendation>,
+    pub assumptions: Vec<String>,
+}
+
+/// On-premises resource for cost comparison (legacy)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnPremResource {
@@ -519,3 +606,4 @@ pub struct ProviderEstimate {
     pub reserved_annual: f64,
     pub savings_vs_onprem_percent: f64,
 }
+

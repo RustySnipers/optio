@@ -9,7 +9,7 @@ import { useState, useEffect } from "react";
 import {
   checkNmap,
   getScanTypeList,
-  getDemoAssets,
+  listAssets,
   getCommonPortList,
   validateScanTarget,
   previewScanCommand,
@@ -50,16 +50,14 @@ export function NetworkIntelligence() {
       </div>
 
       {/* Nmap Status Banner */}
-      <div className={`mb-6 p-4 rounded-lg border ${
-        nmapInfo?.installed
-          ? "bg-green-900/20 border-green-700"
-          : "bg-yellow-900/20 border-yellow-700"
-      }`}>
+      <div className={`mb-6 p-4 rounded-lg border ${nmapInfo?.installed
+        ? "bg-green-900/20 border-green-700"
+        : "bg-yellow-900/20 border-yellow-700"
+        }`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className={`w-3 h-3 rounded-full ${
-              nmapInfo?.installed ? "bg-green-500" : "bg-yellow-500"
-            }`} />
+            <div className={`w-3 h-3 rounded-full ${nmapInfo?.installed ? "bg-green-500" : "bg-yellow-500"
+              }`} />
             <span className="text-white font-medium">
               {nmapInfo?.installed
                 ? `Nmap ${nmapInfo.version || ""} installed`
@@ -83,41 +81,37 @@ export function NetworkIntelligence() {
       <div className="flex space-x-1 mb-6 bg-slate-800 p-1 rounded-lg w-fit">
         <button
           onClick={() => setActiveTab("assets")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "assets"
-              ? "bg-blue-600 text-white"
-              : "text-slate-400 hover:text-white hover:bg-slate-700"
-          }`}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "assets"
+            ? "bg-blue-600 text-white"
+            : "text-slate-400 hover:text-white hover:bg-slate-700"
+            }`}
         >
           Asset Inventory
         </button>
         <button
           onClick={() => setActiveTab("native")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "native"
-              ? "bg-blue-600 text-white"
-              : "text-slate-400 hover:text-white hover:bg-slate-700"
-          }`}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "native"
+            ? "bg-blue-600 text-white"
+            : "text-slate-400 hover:text-white hover:bg-slate-700"
+            }`}
         >
           Quick Scan
         </button>
         <button
           onClick={() => setActiveTab("scanner")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "scanner"
-              ? "bg-blue-600 text-white"
-              : "text-slate-400 hover:text-white hover:bg-slate-700"
-          }`}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "scanner"
+            ? "bg-blue-600 text-white"
+            : "text-slate-400 hover:text-white hover:bg-slate-700"
+            }`}
         >
           Nmap Scanner
         </button>
         <button
           onClick={() => setActiveTab("ports")}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-            activeTab === "ports"
-              ? "bg-blue-600 text-white"
-              : "text-slate-400 hover:text-white hover:bg-slate-700"
-          }`}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "ports"
+            ? "bg-blue-600 text-white"
+            : "text-slate-400 hover:text-white hover:bg-slate-700"
+            }`}
         >
           Port Reference
         </button>
@@ -149,7 +143,8 @@ function AssetInventoryTab() {
 
   const loadAssets = async () => {
     try {
-      const data = await getDemoAssets("demo-client");
+      // TODO: Implement client selection to list actual assets
+      const data = await listAssets("");
       setAssets(data);
     } catch (err) {
       console.error("Failed to load assets:", err);
@@ -303,9 +298,8 @@ function AssetInventoryTab() {
               <tr key={asset.id} className="hover:bg-slate-700/50 transition-colors">
                 <td className="px-4 py-3">
                   <div className="flex items-center space-x-3">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${
-                      asset.status === "active" ? "bg-green-900 text-green-300" : "bg-slate-700 text-slate-400"
-                    }`}>
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold ${asset.status === "active" ? "bg-green-900 text-green-300" : "bg-slate-700 text-slate-400"
+                      }`}>
                       {categoryIcons[asset.category] || "?"}
                     </div>
                     <div>
@@ -330,9 +324,8 @@ function AssetInventoryTab() {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded text-xs font-medium text-white ${
-                    criticalityColors[asset.criticality] || "bg-slate-600"
-                  }`}>
+                  <span className={`px-2 py-1 rounded text-xs font-medium text-white ${criticalityColors[asset.criticality] || "bg-slate-600"
+                    }`}>
                     {asset.criticality}
                   </span>
                 </td>

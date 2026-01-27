@@ -94,5 +94,11 @@ impl From<rusqlite::Error> for OptioError {
     }
 }
 
+impl From<zip::result::ZipError> for OptioError {
+    fn from(err: zip::result::ZipError) -> Self {
+        OptioError::Io(std::io::Error::new(std::io::ErrorKind::Other, err.to_string()))
+    }
+}
+
 /// Result type alias for Optio operations
 pub type OptioResult<T> = Result<T, OptioError>;

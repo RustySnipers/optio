@@ -6,9 +6,10 @@
 pub mod models;
 pub mod cloud_readiness;
 pub mod k8s_hardening;
-pub mod finops;
+// TODO: Re-enable after fixing type mismatches with models.rs
+// pub mod finops;
 
 pub use models::*;
 pub use cloud_readiness::*;
 pub use k8s_hardening::*;
-pub use finops::*;
+// pub use finops::*;

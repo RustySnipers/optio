@@ -19,7 +19,7 @@ impl CloudPricing {
     /// Get pricing for a cloud provider (simplified baseline pricing)
     pub fn for_provider(provider: &CloudProvider) -> Self {
         match provider {
-            CloudProvider::AWS => Self {
+            CloudProvider::Aws => Self {
                 compute_per_vcpu: 0.0416,      // ~$30/month per vCPU
                 memory_per_gb: 0.005,           // ~$3.6/month per GB
                 storage_per_gb_month: 0.10,     // EBS gp3
@@ -35,13 +35,22 @@ impl CloudPricing {
                 managed_db_multiplier: 1.45,
                 k8s_cluster_base: 0.10,         // AKS control plane
             },
-            CloudProvider::GCP => Self {
+            CloudProvider::Gcp => Self {
                 compute_per_vcpu: 0.038,
                 memory_per_gb: 0.0045,
                 storage_per_gb_month: 0.08,
                 egress_per_gb: 0.085,
                 managed_db_multiplier: 1.4,
                 k8s_cluster_base: 0.10,         // GKE autopilot base
+            },
+            // Use AWS-like pricing as default for other providers
+            _ => Self {
+                compute_per_vcpu: 0.04,
+                memory_per_gb: 0.005,
+                storage_per_gb_month: 0.10,
+                egress_per_gb: 0.09,
+                managed_db_multiplier: 1.5,
+                k8s_cluster_base: 0.10,
             },
         }
     }

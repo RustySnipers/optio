@@ -145,7 +145,9 @@ impl HubTlsConfig {
         .build()
         .map_err(|e| SecurityError::TlsConfigError(format!("Client verifier: {}", e)))?;
 
-        let config = ServerConfig::builder()
+        let config = ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| SecurityError::TlsConfigError(format!("Protocol versions: {}", e)))?
             .with_client_cert_verifier(client_cert_verifier)
             .with_single_cert(certs, key)
             .map_err(|e| SecurityError::TlsConfigError(format!("Server config: {}", e)))?;
@@ -188,7 +190,9 @@ impl AgentTlsConfig {
         let key = load_private_key(&key_path)?;
         let ca_certs = load_ca_certs(&ca_path)?;
 
-        let config = ClientConfig::builder()
+        let config = ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .map_err(|e| SecurityError::TlsConfigError(format!("Protocol versions: {}", e)))?
             .with_root_certificates(ca_certs)
             .with_client_auth_cert(certs, key)
             .map_err(|e| SecurityError::TlsConfigError(format!("Client config: {}", e)))?;
@@ -313,6 +317,190 @@ pub mod test_certs {
 
         Ok(())
     }
+}
+
+// ============================================================================
+// Nonce Validation for Replay Attack Prevention
+// ============================================================================
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// Configuration for nonce validation
+#[derive(Debug, Clone)]
+pub struct NonceConfig {
+    /// Maximum age for timestamps to be considered valid (default: 5 minutes)
+    pub max_timestamp_drift: Duration,
+    /// How long to keep nonces in cache before expiry (default: 10 minutes)
+    pub nonce_cache_ttl: Duration,
+    /// Maximum number of nonces to track (prevents memory exhaustion)
+    pub max_cached_nonces: usize,
+}
+
+impl Default for NonceConfig {
+    fn default() -> Self {
+        Self {
+            max_timestamp_drift: Duration::from_secs(5 * 60),  // 5 minutes
+            nonce_cache_ttl: Duration::from_secs(10 * 60),     // 10 minutes
+            max_cached_nonces: 100_000,
+        }
+    }
+}
+
+/// Nonce entry with timestamp for expiry
+#[derive(Debug)]
+struct NonceEntry {
+    seen_at: SystemTime,
+}
+
+/// Validates nonces to prevent replay attacks
+///
+/// Keeps track of recently seen nonces and rejects duplicates.
+/// Also validates client timestamps aren't too far from server time.
+pub struct NonceValidator {
+    config: NonceConfig,
+    /// Seen nonces with their timestamps (for cleanup)
+    seen_nonces: Mutex<HashMap<String, NonceEntry>>,
+}
+
+impl NonceValidator {
+    /// Create a new nonce validator with default configuration
+    pub fn new() -> Self {
+        Self::with_config(NonceConfig::default())
+    }
+
+    /// Create a nonce validator with custom configuration
+    pub fn with_config(config: NonceConfig) -> Self {
+        Self {
+            config,
+            seen_nonces: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Validate a nonce and timestamp
+    ///
+    /// # Arguments
+    /// * `nonce` - Unique nonce from the client (should be UUID)
+    /// * `client_timestamp_ms` - Client's timestamp in milliseconds since epoch
+    ///
+    /// # Returns
+    /// * `Ok(())` if the nonce is valid and not a replay
+    /// * `Err(NonceError)` if validation fails
+    pub fn validate(&self, nonce: &str, client_timestamp_ms: u64) -> Result<(), NonceError> {
+        // Skip validation if nonce is empty (for backward compatibility)
+        if nonce.is_empty() {
+            tracing::debug!("Empty nonce - skipping replay validation (legacy client?)");
+            return Ok(());
+        }
+
+        // Validate timestamp drift
+        if client_timestamp_ms > 0 {
+            let now_ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+
+            let drift_ms = if client_timestamp_ms > now_ms {
+                client_timestamp_ms - now_ms
+            } else {
+                now_ms - client_timestamp_ms
+            };
+
+            let max_drift_ms = self.config.max_timestamp_drift.as_millis() as u64;
+            if drift_ms > max_drift_ms {
+                tracing::warn!(
+                    nonce = %nonce,
+                    client_ts = client_timestamp_ms,
+                    server_ts = now_ms,
+                    drift_ms = drift_ms,
+                    "Timestamp drift too large"
+                );
+                return Err(NonceError::TimestampDrift {
+                    drift_ms,
+                    max_drift_ms,
+                });
+            }
+        }
+
+        // Check for replay
+        let mut nonces = self.seen_nonces.lock().map_err(|_| NonceError::InternalError)?;
+
+        // Clean up expired entries periodically (every validation for simplicity)
+        self.cleanup_expired(&mut nonces);
+
+        // Check if we've seen this nonce before
+        if nonces.contains_key(nonce) {
+            tracing::warn!(nonce = %nonce, "Replay attack detected - duplicate nonce");
+            return Err(NonceError::ReplayDetected(nonce.to_string()));
+        }
+
+        // Enforce max cache size
+        if nonces.len() >= self.config.max_cached_nonces {
+            tracing::warn!("Nonce cache full ({} entries) - removing oldest", nonces.len());
+            // Remove oldest entries (simple strategy: remove first 10%)
+            let to_remove = nonces.len() / 10;
+            let keys_to_remove: Vec<_> = nonces.keys().take(to_remove).cloned().collect();
+            for key in keys_to_remove {
+                nonces.remove(&key);
+            }
+        }
+
+        // Record the nonce
+        nonces.insert(
+            nonce.to_string(),
+            NonceEntry {
+                seen_at: SystemTime::now(),
+            },
+        );
+
+        tracing::debug!(nonce = %nonce, "Nonce validated successfully");
+        Ok(())
+    }
+
+    /// Clean up expired nonces from the cache
+    fn cleanup_expired(&self, nonces: &mut HashMap<String, NonceEntry>) {
+        let now = SystemTime::now();
+        let ttl = self.config.nonce_cache_ttl;
+
+        nonces.retain(|_, entry| {
+            now.duration_since(entry.seen_at)
+                .map(|age| age < ttl)
+                .unwrap_or(true)
+        });
+    }
+}
+
+impl Default for NonceValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Errors from nonce validation
+#[derive(Debug, thiserror::Error)]
+pub enum NonceError {
+    #[error("Replay attack detected: nonce '{0}' has been seen before")]
+    ReplayDetected(String),
+
+    #[error("Timestamp drift too large: {drift_ms}ms exceeds maximum {max_drift_ms}ms")]
+    TimestampDrift { drift_ms: u64, max_drift_ms: u64 },
+
+    #[error("Internal validation error")]
+    InternalError,
+}
+
+/// Generate a nonce for use in requests (call from agent side)
+pub fn generate_nonce() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+/// Get current timestamp in milliseconds for client_timestamp_ms field
+pub fn current_timestamp_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

@@ -34,13 +34,12 @@ import {
   getReportTypes,
   getExportFormatList,
   generateReport,
-  generateDemoReports,
   exportReportHtml,
   exportReportMarkdown,
   exportReportJson,
   generateExecutivePdf,
-  generateDemoPdf,
   openPdfLocation,
+  listReports,
 } from "@/lib/commands";
 import type {
   ReportTypeInfo,
@@ -93,10 +92,10 @@ export function ReportingCenter() {
   // Form state for new report
   const [formData, setFormData] = useState<GenerateReportRequest>({
     reportType: "executive_summary",
-    clientId: "demo-client",
-    clientName: "Demo Client",
+    clientId: "",
+    clientName: "",
     title: "",
-    author: "Security Consultant",
+    author: "",
     format: "html",
     includeToc: true,
     includeExecutiveSummary: true,
@@ -115,14 +114,14 @@ export function ReportingCenter() {
   const loadData = async () => {
     setIsLoading(true);
     try {
-      const [types, formats, demoReports] = await Promise.all([
+      const [types, formats, existingReports] = await Promise.all([
         getReportTypes(),
         getExportFormatList(),
-        generateDemoReports("demo-client", "Demo Client"),
+        listReports(),
       ]);
       setReportTypes(types);
       setExportFormats(formats);
-      setReports(demoReports);
+      setReports(existingReports);
     } catch (error) {
       console.error("Failed to load reporting data:", error);
     } finally {
@@ -192,7 +191,7 @@ export function ReportingCenter() {
     try {
       const result = await generateExecutivePdf({
         clientId: formData.clientId,
-        clientName: formData.clientName || "Demo Client",
+        clientName: formData.clientName || "Client Name",
         title: formData.title || "Executive Security Assessment",
         framework: "NIST_CSF_2",
         includeNetworkData: true,
@@ -207,19 +206,7 @@ export function ReportingCenter() {
     }
   };
 
-  const handleGenerateDemoPdf = async () => {
-    setIsGeneratingPdf(true);
-    setPdfResult(null);
-    try {
-      const result = await generateDemoPdf(formData.clientName || "Demo Client");
-      setPdfResult(result);
-    } catch (error) {
-      console.error("Failed to generate demo PDF:", error);
-      alert(`Failed to generate demo PDF: ${error}`);
-    } finally {
-      setIsGeneratingPdf(false);
-    }
-  };
+
 
   const handleOpenPdfLocation = async () => {
     if (pdfResult?.filePath) {
@@ -279,31 +266,28 @@ export function ReportingCenter() {
         <div className="flex gap-4 mt-6">
           <button
             onClick={() => setActiveTab("reports")}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === "reports"
-                ? "bg-blue-600 text-white"
-                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-            }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === "reports"
+              ? "bg-blue-600 text-white"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+              }`}
           >
             Reports
           </button>
           <button
             onClick={() => setActiveTab("generate")}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === "generate"
-                ? "bg-blue-600 text-white"
-                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-            }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === "generate"
+              ? "bg-blue-600 text-white"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+              }`}
           >
             Generate New
           </button>
           <button
             onClick={() => setActiveTab("pdf")}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${
-              activeTab === "pdf"
-                ? "bg-red-600 text-white"
-                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
-            }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 ${activeTab === "pdf"
+              ? "bg-red-600 text-white"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+              }`}
           >
             <FileOutput className="w-4 h-4" />
             Executive PDF
@@ -490,11 +474,10 @@ export function ReportingCenter() {
                         reportType: type.reportType.toLowerCase().replace(/ /g, "_"),
                       }))
                     }
-                    className={`flex items-start gap-4 p-4 rounded-xl border transition-all ${
-                      formData.reportType.toLowerCase().includes(type.reportType.toLowerCase().replace(/ /g, ""))
-                        ? "bg-blue-500/20 border-blue-500"
-                        : "bg-slate-700/50 border-slate-600 hover:border-slate-500"
-                    }`}
+                    className={`flex items-start gap-4 p-4 rounded-xl border transition-all ${formData.reportType.toLowerCase().includes(type.reportType.toLowerCase().replace(/ /g, ""))
+                      ? "bg-blue-500/20 border-blue-500"
+                      : "bg-slate-700/50 border-slate-600 hover:border-slate-500"
+                      }`}
                   >
                     <div className="p-2 bg-slate-600 rounded-lg">
                       {reportTypeIcons[type.reportType]}
@@ -800,18 +783,7 @@ export function ReportingCenter() {
                   </p>
                 </div>
                 <div className="flex gap-3">
-                  <button
-                    onClick={handleGenerateDemoPdf}
-                    disabled={isGeneratingPdf}
-                    className="px-5 py-2.5 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-600 text-white rounded-lg font-medium flex items-center gap-2 transition-colors"
-                  >
-                    {isGeneratingPdf ? (
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                    ) : (
-                      <FileText className="w-5 h-5" />
-                    )}
-                    Demo Report
-                  </button>
+
                   <button
                     onClick={handleGenerateExecutivePdf}
                     disabled={isGeneratingPdf}

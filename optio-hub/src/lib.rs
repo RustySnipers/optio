@@ -47,8 +47,11 @@ pub fn run() {
 
             #[cfg(debug_assertions)]
             {
-                let window = app.get_webview_window("main").unwrap();
-                window.open_devtools();
+                if let Some(window) = app.get_webview_window("main") {
+                    window.open_devtools();
+                } else {
+                    tracing::warn!("Could not open devtools: main window not found");
+                }
             }
 
             Ok(())
