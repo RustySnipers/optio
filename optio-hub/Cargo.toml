@@ -28,7 +28,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 rusqlite = { version = "0.34", features = ["bundled"] }
 aes-gcm = "0.10"
-rand = "0.8"
+rand = "0.9"
 base64 = "0.22"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
